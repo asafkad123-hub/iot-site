@@ -1,148 +1,117 @@
 "use client";
-
-import { useMemo, useState } from "react";
-import {
-  Card,
-  ConfidenceBar,
-  IconAlert,
-  IconBark,
-  IconCalm,
-  IconHeart,
-  IconMove,
-  IconSmile,
-  IconWave,
-  Metric,
-  PageShell,
-  Pill,
-  SecondaryButton,
-} from "../_components/ds";
-
-type Emotion = "Happy" | "Calm" | "Anxious";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
+import { PageShell, Card, Metric, IconHeart, IconMove, IconWave, IconBark, IconSmile, ConfidenceBar, Pill, SecondaryButton, Field, PrimaryButton } from "../_components/ds";
 
 export default function DashboardPage() {
-  const [emotion, setEmotion] = useState<Emotion>("Happy");
-  const confidence = useMemo(
-    () => (emotion === "Happy" ? 84 : emotion === "Calm" ? 76 : 69),
-    [emotion]
-  );
+  const [dog, setDog] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", breed: "", weight: "", age: "" });
+  const router = useRouter();
 
-  const emotionIcon = useMemo(() => {
-    if (emotion === "Happy") return <IconSmile />;
-    if (emotion === "Calm") return <IconCalm />;
-    return <IconAlert />;
-  }, [emotion]);
+  const getData = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return router.push("/login");
+    const { data } = await supabase.from('dogs').select('*').eq('user_id', session.user.id).single();
+    if (data) {
+      setDog(data);
+      setEditForm({ name: data.name, breed: data.breed, weight: data.weight, age: data.age });
+    }
+  };
 
-  const emotionHint = useMemo(() => {
-    if (emotion === "Happy") return "calm + engaged";
-    if (emotion === "Calm") return "resting + stable";
-    return "elevated stress signals";
-  }, [emotion]);
+  useEffect(() => { getData(); }, []);
+
+  const handleUpdate = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase.from('dogs').update({
+      name: editForm.name,
+      breed: editForm.breed,
+      weight: parseFloat(editForm.weight),
+      age: parseInt(editForm.age)
+    }).eq('user_id', session?.user.id);
+
+    if (!error) {
+      setIsEditing(false);
+      getData();
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   return (
-    <PageShell
-      rightSlot={
-        <div className="flex items-center gap-2">
-          <SecondaryButton href="/connect">Back</SecondaryButton>
-          <SecondaryButton href="/">Home</SecondaryButton>
-        </div>
-      }
+    <PageShell 
+      subtitle="Live Telemetry"
+      rightSlot={<SecondaryButton onClick={handleLogout}>Logout</SecondaryButton>}
     >
-      <section className="mx-auto max-w-6xl px-6 pb-16">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mx-auto max-w-7xl px-6 py-12">
+        <div className="flex flex-wrap justify-between items-end gap-6 mb-12">
           <div>
-            <div className="text-2xl font-semibold tracking-tight text-white/90">
-              Dashboard
-            </div>
-            <div className="mt-1 text-sm text-white/60">
-              Your dog’s live emotional state and sensor metrics
-            </div>
+            <h2 className="text-6xl font-black text-white tracking-tighter">
+              {dog?.name || "Dog"}'s Status
+            </h2>
+            <p className="text-white/40 mt-3 font-bold uppercase tracking-[0.2em] text-[10px]">
+              {dog?.breed} • {dog?.age} Years Old • {dog?.weight}kg
+            </p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Pill tone="violet" label="Device: collar-01" />
-            <Pill tone="emerald" label="Status: Online" />
+          <div className="flex gap-3">
+            <SecondaryButton onClick={() => setIsEditing(!isEditing)}>
+              {isEditing ? "Cancel" : "Edit Profile"}
+            </SecondaryButton>
+            <Pill tone="emerald" label="AI Inference Live" />
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card accent="fuchsia">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-semibold text-white/90">Emotion</div>
-                <div className="mt-1 text-xs text-white/55">AI inference (demo)</div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <ToggleBtn active={emotion === "Happy"} onClick={() => setEmotion("Happy")}>
-                  Happy
-                </ToggleBtn>
-                <ToggleBtn active={emotion === "Calm"} onClick={() => setEmotion("Calm")}>
-                  Calm
-                </ToggleBtn>
-                <ToggleBtn active={emotion === "Anxious"} onClick={() => setEmotion("Anxious")}>
-                  Anxious
-                </ToggleBtn>
-              </div>
-            </div>
-
-            <div className="mt-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-white/80">
-                  {emotionIcon}
-                </span>
-                <div>
-                  <div className="text-lg font-semibold text-white/90">{emotion}</div>
-                  <div className="text-xs text-white/55">{emotionHint}</div>
+        {isEditing ? (
+          <div className="mb-12">
+            <Card accent="violet">
+              <div className="grid md:grid-cols-4 gap-4 items-end">
+                <Field label="Name" value={editForm.name} onChange={(v:any) => setEditForm({...editForm, name: v})} />
+                <Field label="Breed" value={editForm.breed} onChange={(v:any) => setEditForm({...editForm, breed: v})} />
+                <Field label="Age" type="number" value={editForm.age} onChange={(v:any) => setEditForm({...editForm, age: v})} />
+                <Field label="Weight" type="number" value={editForm.weight} onChange={(v:any) => setEditForm({...editForm, weight: v})} />
+                <div className="md:col-span-4 pt-4">
+                   <PrimaryButton onClick={handleUpdate}>Save Changes</PrimaryButton>
                 </div>
               </div>
-
-              <div className="text-right">
-                <div className="text-xs text-white/55">confidence</div>
-                <div className="text-lg font-semibold text-white/90">{confidence}%</div>
-              </div>
-            </div>
-
-            <ConfidenceBar pct={confidence} />
-
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              <Pill tone="cyan" label="Realtime" />
-              <Pill tone="violet" label="Stable UI" />
-              <Pill tone="emerald" label="Ready for data" />
-            </div>
-          </Card>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Metric accent="fuchsia" label="Heart Rate" value="92 bpm" hint="stable" icon={<IconHeart />} />
-            <Metric accent="cyan" label="HRV" value="48 ms" hint="moderate" icon={<IconWave />} />
-            <Metric accent="emerald" label="Movement" value="High" hint="posture + activity" icon={<IconMove />} />
-            <Metric accent="amber" label="Bark level" value="Low" hint="pattern normal" icon={<IconBark />} />
+            </Card>
           </div>
-        </div>
-      </section>
-    </PageShell>
-  );
-}
+        ) : (
+          <div className="grid gap-8 lg:grid-cols-3">
+            <Card accent="fuchsia" className="lg:col-span-2">
+               <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-6">
+                     <div className="p-6 bg-white/[0.05] rounded-3xl text-fuchsia-400"><IconSmile /></div>
+                     <div>
+                        <div className="text-4xl font-black text-white uppercase tracking-tight">{dog?.emotion || "Happy"}</div>
+                        <div className="text-sm text-white/40 italic">Emotional AI Prediction</div>
+                     </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Health Status</div>
+                    <div className="text-emerald-400 font-bold uppercase text-xs">Optimal Condition</div>
+                  </div>
+               </div>
+               <ConfidenceBar pct={94} />
+            </Card>
 
-function ToggleBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        "rounded-xl border px-3 py-2 text-xs font-semibold transition",
-        active
-          ? "border-white/10 bg-white/10 text-white"
-          : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10",
-      ].join(" ")}
-    >
-      {children}
-    </button>
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
+              <Metric label="Heart Rate" value="84 BPM" icon={<IconHeart />} />
+              <Metric label="Barking" value="None" icon={<IconBark />} />
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            <Metric label="Activity" value="Normal" icon={<IconMove />} />
+            <Metric label="Temperature" value="38.5°C" icon={<IconWave />} />
+            <Metric label="Sync State" value="Cloud" icon={<IconWave />} />
+            <Metric label="GPS Status" value="Locked" icon={<IconMove />} />
+        </div>
+      </div>
+    </PageShell>
   );
 }

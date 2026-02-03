@@ -1,88 +1,58 @@
 "use client";
-
-import { useMemo, useState } from "react";
-import {
-  Card,
-  Field,
-  PageShell,
-  Pill,
-  PrimaryButton,
-  SecondaryButton,
-} from "../_components/ds";
+import { useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
+import { Card, Field, PageShell, PrimaryButton } from "../_components/ds";
 
 export default function SetupPage() {
-  const [dogName, setDogName] = useState("");
-  const [breed, setBreed] = useState("");
-  const [age, setAge] = useState("");
-  const [weight, setWeight] = useState("");
+  const router = useRouter();
+  // הוספת age ל-State
+  const [form, setForm] = useState({ name: "", breed: "", weight: "", age: "" });
 
-  const canContinue = useMemo(
-    () => dogName.trim().length > 0 && breed.trim().length > 0,
-    [dogName, breed]
-  );
+  const handleSave = async () => {
+    if (!form.name || !form.breed || !form.age) return alert("Please fill in all required fields.");
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    
+    const { error } = await supabase.from('dogs').upsert({
+      user_id: session.user.id,
+      name: form.name,
+      breed: form.breed,
+      weight: parseFloat(form.weight) || 0,
+      age: parseInt(form.age) || 0 // שליחת הגיל לטבלה
+    }, { onConflict: 'user_id' });
+
+    if (!error) {
+      router.push("/connect");
+    } else {
+      alert(error.message);
+    }
+  };
 
   return (
-    <PageShell
-      rightSlot={
-        <div className="flex items-center gap-2">
-          <SecondaryButton href="/">Home</SecondaryButton>
-        </div>
-      }
-    >
-      <section className="mx-auto max-w-xl px-6 pb-16">
+    <PageShell subtitle="Hardware Initialization">
+      <div className="mx-auto max-w-xl px-6 py-12">
         <Card accent="violet">
-          <div className="mb-3 inline-flex items-center gap-2">
-            <Pill tone="violet" label="Step 1 of 3" />
-            <Pill tone="cyan" label="Dog profile" />
-          </div>
-
-          <h1 className="text-2xl font-semibold tracking-tight text-white/90">
-            Tell us about your dog
-          </h1>
-          <p className="mt-2 text-sm text-white/60">
-            One-time setup. Later we’ll take you straight to your dashboard.
-          </p>
-
-          <div className="mt-6 grid gap-4">
-            <Field
-              label="Dog's name"
-              placeholder="e.g. Milo"
-              value={dogName}
-              onChange={setDogName}
-            />
-            <Field
-              label="Breed"
-              placeholder="e.g. Border Collie"
-              value={breed}
-              onChange={setBreed}
-            />
-
+          <h2 className="text-3xl font-black text-white mb-2 tracking-tighter">Dog Profile</h2>
+          <p className="text-white/30 text-xs mb-10 font-bold uppercase tracking-widest">Calibrating biometric sensors</p>
+          
+          <div className="space-y-6">
+            <Field label="Dog Name" placeholder="e.g. Max" value={form.name} onChange={(v:any) => setForm({...form, name: v})} />
+            <Field label="Breed" placeholder="e.g. Golden Retriever" value={form.breed} onChange={(v:any) => setForm({...form, breed: v})} />
+            
+            {/* שורת הגיל והמשקל זה לצד זה */}
             <div className="grid grid-cols-2 gap-4">
-              <Field
-                label="Age"
-                placeholder="e.g. 3"
-                value={age}
-                onChange={setAge}
-                type="number"
-              />
-              <Field
-                label="Weight"
-                placeholder="e.g. 18"
-                value={weight}
-                onChange={setWeight}
-                type="number"
-              />
+              <Field label="Age (Years)" type="number" placeholder="e.g. 3" value={form.age} onChange={(v:any) => setForm({...form, age: v})} />
+              <Field label="Weight (kg)" type="number" placeholder="e.g. 25" value={form.weight} onChange={(v:any) => setForm({...form, weight: v})} />
+            </div>
+
+            <div className="pt-6 text-center">
+              <PrimaryButton onClick={handleSave}>Initialize & Connect</PrimaryButton>
             </div>
           </div>
-
-          <div className="mt-6 flex items-center justify-between">
-            <div className="text-xs text-white/55">Next: connect your collar</div>
-            <PrimaryButton href="/connect" disabled={!canContinue}>
-              Continue
-            </PrimaryButton>
-          </div>
         </Card>
-      </section>
+      </div>
     </PageShell>
   );
 }
