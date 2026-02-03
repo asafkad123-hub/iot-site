@@ -1,360 +1,155 @@
-import Link from "next/link";
+import {
+  Card,
+  Dot,
+  IconBark,
+  IconHeart,
+  IconMove,
+  IconSmile,
+  IconWave,
+  Metric,
+  PageShell,
+  Pill,
+  PrimaryButton,
+} from "./_components/ds";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-white text-zinc-900">
-      {/* Subtle background */}
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.12),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(16,185,129,0.10),transparent_60%)]" />
-      </div>
+    <PageShell
+      rightSlot={<PrimaryButton href="/setup">Get Started</PrimaryButton>}
+      title="DogSense"
+      subtitle="Realtime collar insights"
+    >
+      <section className="mx-auto max-w-6xl px-6 pb-16">
+        <div className="grid gap-10 md:grid-cols-2 md:items-start">
+          {/* LEFT */}
+          <div>
+            <div className="mb-4 inline-flex flex-wrap items-center gap-2">
+              <Pill tone="emerald" label="Live monitoring" />
+              <Pill tone="violet" label="AI insights" />
+              <Pill tone="cyan" label="Elegant UI" />
+            </div>
 
-      {/* Top bar */}
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm">
-            <IconPaw />
-          </div>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">DogSense</div>
-            <div className="text-xs text-zinc-500">Realtime collar insights</div>
-          </div>
-        </div>
+            <h1 className="text-4xl font-black leading-tight tracking-tight md:text-6xl">
+              Understand your dog&apos;s{" "}
+              <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-300 bg-clip-text text-transparent">
+                emotions
+              </span>{" "}
+              through real-time collar sensor monitoring
+            </h1>
 
-        <nav className="flex items-center gap-2">
-          <Link
-            href="/setup"
-            className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
-          >
-            Get Started
-          </Link>
-        </nav>
-      </header>
+            <ul className="mt-6 grid gap-3 text-sm text-white/75">
+              <FeatureRow icon={<IconHeart />} text="Real time heart rate monitoring" />
+              <FeatureRow icon={<IconBark />} text="Bark pattern analysis" />
+              <FeatureRow icon={<IconMove />} text="Movement and posture tracking" />
+              <FeatureRow icon={<IconWave />} text="AI powered emotion detection" />
+            </ul>
 
-      {/* Hero */}
-      <section className="mx-auto grid max-w-6xl gap-10 px-6 pb-16 pt-8 md:grid-cols-2 md:items-center">
-        <div>
-          <div className="inline-flex items-center rounded-full border border-zinc-200 bg-white/70 px-3 py-1 text-xs text-zinc-600 shadow-sm">
-            Live monitoring <Dot /> AI insights <Dot /> Elegant UI
-          </div>
+            <div className="mt-7 flex flex-wrap items-center gap-4">
+              <PrimaryButton href="/setup">Get Started</PrimaryButton>
+              <div className="text-xs text-white/55">
+                One-time setup <Dot /> Then you go straight to your dashboard
+              </div>
+            </div>
 
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">
-            Understand your dog&apos;s emotions
-            <span className="text-zinc-500"> through real-time collar sensor monitoring</span>
-          </h1>
-
-          <ul className="mt-6 space-y-3 text-zinc-700">
-            <Feature icon={<IconHeart />} title="Real time heart rate monitoring" />
-            <Feature icon={<IconBark />} title="Bark pattern analysis" />
-            <Feature icon={<IconMove />} title="Movement and posture tracking" />
-            <Feature icon={<IconBrain />} title="AI powered emotion detection" />
-          </ul>
-
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href="/setup"
-              className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
-            >
-              Get Started
-            </Link>
-
-            <div className="text-xs text-zinc-500">
-              One-time setup <Dot /> Then you go straight to your dashboard
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Pill tone="violet" label="Realtime" />
+              <Pill tone="cyan" label="Secure" />
+              <Pill tone="emerald" label="Readable" />
+              <Pill tone="amber" label="Scalable" />
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <MiniPill label="Realtime" />
-            <MiniPill label="Secure" />
-            <MiniPill label="Readable" />
-            <MiniPill label="Scalable" />
-          </div>
-        </div>
+          {/* RIGHT */}
+          <div className="relative">
+            {/* extra visual glow behind the preview */}
+            <div className="pointer-events-none absolute -inset-6 rounded-[28px] bg-gradient-to-br from-violet-500/20 via-fuchsia-500/15 to-cyan-400/15 blur-2xl" />
 
-        {/* Preview card */}
-        <div className="rounded-3xl border border-zinc-200 bg-white/70 p-5 shadow-sm backdrop-blur">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold">Live preview</div>
-              <div className="text-xs text-zinc-500">Clean, calm, and readable</div>
-            </div>
-
-            <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-600">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Online
-            </span>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <MetricCard label="Heart Rate" value="92 bpm" icon={<IconHeart />} />
-            <MetricCard label="HRV" value="48 ms" icon={<IconWave />} />
-            <MetricCard label="Activity" value="High" icon={<IconSpark />} />
-            <MetricCard label="Barks" value="Low" icon={<IconSound />} />
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Emotion</div>
-              <span className="text-xs text-zinc-500">confidence</span>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-2xl border border-zinc-200 bg-white text-zinc-700">
-                  <IconSmile />
-                </span>
+            <Card accent="cyan">
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-semibold">Happy</div>
-                  <div className="text-xs text-zinc-500">calm + engaged</div>
+                  <div className="text-sm font-semibold text-white/90">
+                    Live preview
+                  </div>
+                  <div className="text-xs text-white/55">
+                    Clean, calm, and readable
+                  </div>
+                </div>
+
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.55)]" />
+                  Online
                 </div>
               </div>
 
-              <div className="text-sm font-semibold">84%</div>
-            </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Metric accent="fuchsia" label="Heart Rate" value="92 bpm" hint="updated just now" icon={<IconHeart />} />
+                <Metric accent="cyan" label="HRV" value="48 ms" hint="updated just now" icon={<IconWave />} />
+                <Metric accent="emerald" label="Activity" value="High" hint="updated just now" icon={<IconMove />} />
+                <Metric accent="amber" label="Barks" value="Low" hint="updated just now" icon={<IconBark />} />
+              </div>
 
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-              <div className="h-full w-[84%] rounded-full bg-emerald-500" />
-            </div>
+              <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-5">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-white/90">
+                    Emotion
+                  </div>
+                  <div className="text-xs text-white/55">confidence</div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-white/85">
+                      <IconSmile />
+                    </span>
+                    <div>
+                      <div className="text-sm font-semibold text-white/90">
+                        Happy
+                      </div>
+                      <div className="text-xs text-white/55">
+                        calm + engaged
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm font-semibold text-white/90">
+                    84%
+                  </div>
+                </div>
+
+                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full w-[84%] rounded-full bg-gradient-to-r from-emerald-400 via-cyan-300 to-violet-400" />
+                </div>
+
+                {/* tiny sparkline for extra visuals */}
+                <div className="mt-4 h-16 overflow-hidden rounded-2xl border border-white/10 bg-[#070814] p-3">
+                  <svg viewBox="0 0 600 120" className="h-full w-full" fill="none">
+                    <path
+                      d="M0 75 C 70 25, 140 100, 210 60 C 280 20, 350 90, 420 50 C 490 12, 540 95, 600 40"
+                      stroke="rgba(168,85,247,0.9)"
+                      strokeWidth="3"
+                    />
+                    <path
+                      d="M0 90 C 80 70, 160 105, 240 80 C 320 55, 390 110, 470 72 C 550 35, 580 92, 600 64"
+                      stroke="rgba(34,211,238,0.85)"
+                      strokeWidth="3"
+                    />
+                  </svg>
+                </div>
+              </div>
+            </Card>
           </div>
         </div>
       </section>
-
-      <footer className="mx-auto max-w-6xl px-6 pb-10 text-xs text-zinc-500">
-        © {new Date().getFullYear()} DogSense <Dot /> UI prototype (no backend yet)
-      </footer>
-    </main>
+    </PageShell>
   );
 }
 
-function Feature({ icon, title }: { icon: React.ReactNode; title: string }) {
+function FeatureRow({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <li className="flex items-start gap-3">
-      <span className="mt-0.5 grid h-9 w-9 place-items-center rounded-2xl border border-zinc-200 bg-white text-zinc-700 shadow-sm">
+    <li className="flex items-center gap-3">
+      <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 shadow-[0_15px_50px_rgba(0,0,0,0.35)]">
         {icon}
       </span>
-      <div className="pt-2 text-sm">{title}</div>
+      {text}
     </li>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-500">{label}</div>
-        <div className="text-zinc-600">{icon}</div>
-      </div>
-      <div className="mt-2 text-xl font-semibold tracking-tight">{value}</div>
-      <div className="mt-1 text-xs text-zinc-400">updated just now</div>
-    </div>
-  );
-}
-
-function MiniPill({ label }: { label: string }) {
-  return (
-    <div className="rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 text-center text-xs text-zinc-600 shadow-sm">
-      {label}
-    </div>
-  );
-}
-
-function Dot() {
-  return <span className="mx-2 inline-block h-1 w-1 rounded-full bg-zinc-400 align-middle" />;
-}
-
-/* Icons (clean + consistent) */
-function IconPaw() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-zinc-800">
-      <path
-        d="M8.5 12.5c-1.3 0-2.5-1.5-2.5-3.1S7.2 6 8.5 6s2.5 1.5 2.5 3.4-1.2 3.1-2.5 3.1Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M15.5 12.5c-1.3 0-2.5-1.5-2.5-3.1S14.2 6 15.5 6s2.5 1.5 2.5 3.4-1.2 3.1-2.5 3.1Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6.6 16.3c-.3-1.7 1.4-3.3 3.1-3.3h4.6c1.7 0 3.4 1.6 3.1 3.3-.3 1.8-1.9 3.7-5.4 3.7s-5.1-1.9-5.4-3.7Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6 9.8c-.9 0-1.7-1-1.7-2.1S5.1 5.5 6 5.5s1.7 1 1.7 2.2S6.9 9.8 6 9.8Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-        opacity="0.7"
-      />
-      <path
-        d="M18 9.8c-.9 0-1.7-1-1.7-2.1S17.1 5.5 18 5.5s1.7 1 1.7 2.2S18.9 9.8 18 9.8Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function IconHeart() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M12 21s-7-4.35-9.5-8.5C.5 9 2.5 6 6 6c2 0 3.2 1.1 4 2.1C10.8 7.1 12 6 14 6c3.5 0 5.5 3 3.5 6.5C19 16.65 12 21 12 21Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconWave() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M3 12h4l2-6 4 12 2-6h6"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconSpark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M12 2l1.6 6.2L20 10l-6.4 1.8L12 18l-1.6-6.2L4 10l6.4-1.8L12 2Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconSound() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M11 5 7 9H3v6h4l4 4V5Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M16.5 8.5a5 5 0 0 1 0 7"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function IconBark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M5 12v-2a3 3 0 0 1 3-3h1l2-2h2l2 2h1a3 3 0 0 1 3 3v2"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7 12v5a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M4 13h-1M20 13h1"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function IconMove() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M4 14c4-8 8 8 16 0"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M4 18c4-6 8 6 16 0"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function IconBrain() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0 0 6v1a3 3 0 0 0 3 3"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 0 6v1a3 3 0 0 1-3 3"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M9 7h6M9 17h6"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function IconSmile() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M8.5 14.5c.9 1.2 2.1 2 3.5 2s2.6-.8 3.5-2"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M9 10h.01M15 10h.01"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

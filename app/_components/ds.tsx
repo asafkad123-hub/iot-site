@@ -13,17 +13,22 @@ export function PageShell({
   rightSlot?: React.ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-white text-zinc-900">
+    <main className="min-h-screen bg-[#05060a] text-white">
       <Bg />
 
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <Link href="/" className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm">
-            <IconPaw />
+          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-cyan-400 p-[1px] shadow-[0_0_30px_rgba(168,85,247,0.35)]">
+            <div className="grid h-full w-full place-items-center rounded-2xl bg-[#070814]">
+              <IconPaw />
+            </div>
           </div>
+
           <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">{title}</div>
-            <div className="text-xs text-zinc-500">{subtitle}</div>
+            <div className="text-sm font-semibold tracking-tight text-white/90">
+              {title}
+            </div>
+            <div className="text-xs text-white/55">{subtitle}</div>
           </div>
         </Link>
 
@@ -32,8 +37,8 @@ export function PageShell({
 
       {children}
 
-      <footer className="mx-auto max-w-6xl px-6 pb-10 text-xs text-zinc-500">
-        © {new Date().getFullYear()} DogSense <Dot /> UI prototype
+      <footer className="mx-auto max-w-6xl px-6 pb-10 text-xs text-white/45">
+        © {new Date().getFullYear()} DogSense <Dot /> UI prototype (no backend yet)
       </footer>
     </main>
   );
@@ -41,20 +46,58 @@ export function PageShell({
 
 export function Bg() {
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.12),transparent_55%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(16,185,129,0.10),transparent_60%)]" />
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      {/* Big colorful blobs */}
+      <div className="absolute -top-24 left-[-140px] h-[520px] w-[520px] rounded-full bg-violet-500/25 blur-[90px]" />
+      <div className="absolute top-[-140px] right-[-180px] h-[560px] w-[560px] rounded-full bg-cyan-400/20 blur-[95px]" />
+      <div className="absolute bottom-[-220px] left-[15%] h-[640px] w-[640px] rounded-full bg-fuchsia-500/18 blur-[110px]" />
+      <div className="absolute bottom-[-220px] right-[8%] h-[520px] w-[520px] rounded-full bg-emerald-400/14 blur-[110px]" />
+
+      {/* Subtle sheen */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.06),transparent_25%,transparent_75%,rgba(255,255,255,0.06))]" />
+
+      {/* Dot grid */}
+      <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(rgba(255,255,255,0.18)_1px,transparent_1px)] [background-size:22px_22px]" />
+
+      {/* Soft vignette */}
+      <div className="absolute inset-0 bg-[radial-gradient(900px_circle_at_50%_50%,transparent_40%,rgba(0,0,0,0.65))]" />
     </div>
   );
 }
 
 export function Dot() {
-  return <span className="mx-2 inline-block h-1 w-1 rounded-full bg-zinc-400 align-middle" />;
+  return (
+    <span className="mx-2 inline-block h-1 w-1 rounded-full bg-white/35 align-middle" />
+  );
 }
 
-export function Pill({ label }: { label: string }) {
+export function Pill({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "violet" | "cyan" | "emerald" | "fuchsia" | "amber";
+}) {
+  const toneCls =
+    tone === "violet"
+      ? "border-violet-400/20 bg-violet-400/10 text-violet-100"
+      : tone === "cyan"
+      ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-100"
+      : tone === "emerald"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
+      : tone === "fuchsia"
+      ? "border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-100"
+      : tone === "amber"
+      ? "border-amber-300/20 bg-amber-300/10 text-amber-100"
+      : "border-white/12 bg-white/5 text-white/70";
+
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 text-center text-xs text-zinc-600 shadow-sm">
+    <div
+      className={[
+        "rounded-2xl border px-3 py-2 text-center text-xs shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur",
+        toneCls,
+      ].join(" ")}
+    >
       {label}
     </div>
   );
@@ -74,40 +117,80 @@ export function PrimaryButton({
   type?: "button" | "submit";
 }) {
   const cls = [
-    "inline-flex items-center justify-center rounded-2xl px-6 py-3 text-sm font-semibold shadow-sm transition",
+    "relative inline-flex items-center justify-center rounded-2xl px-6 py-3 text-sm font-semibold transition",
     disabled
-      ? "pointer-events-none bg-zinc-200 text-zinc-500"
-      : "bg-zinc-900 text-white hover:bg-zinc-800",
+      ? "pointer-events-none bg-white/10 text-white/35"
+      : "bg-gradient-to-r from-violet-500 via-fuchsia-500 to-cyan-400 text-black shadow-[0_18px_45px_rgba(168,85,247,0.25)] hover:brightness-110",
   ].join(" ");
+
+  const inner = (
+    <>
+      <span className="absolute inset-0 rounded-2xl opacity-0 shadow-[0_0_40px_rgba(34,211,238,0.35)] transition-opacity duration-300 group-hover:opacity-100" />
+      <span className="relative">{children}</span>
+    </>
+  );
 
   if (href) {
     return (
-      <Link className={cls} href={href}>
-        {children}
+      <Link className={`group ${cls}`} href={href}>
+        {inner}
       </Link>
     );
   }
 
   return (
-    <button type={type} onClick={onClick} className={cls} disabled={disabled}>
-      {children}
+    <button
+      type={type}
+      onClick={onClick}
+      className={`group ${cls}`}
+      disabled={disabled}
+    >
+      {inner}
     </button>
   );
 }
 
-export function SecondaryButton({ children, href }: { children: React.ReactNode; href: string }) {
+export function SecondaryButton({
+  children,
+  href,
+}: {
+  children: React.ReactNode;
+  href: string;
+}) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50"
+      className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white/85 shadow-[0_10px_30px_rgba(0,0,0,0.25)] hover:bg-white/10"
     >
       {children}
     </Link>
   );
 }
 
-export function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-3xl border border-zinc-200 bg-white/80 p-6 shadow-sm backdrop-blur">{children}</div>;
+export function Card({
+  children,
+  accent = "violet",
+}: {
+  children: React.ReactNode;
+  accent?: "violet" | "cyan" | "emerald" | "fuchsia" | "amber";
+}) {
+  const glow =
+    accent === "cyan"
+      ? "from-cyan-400/25 to-blue-500/10"
+      : accent === "emerald"
+      ? "from-emerald-400/25 to-lime-500/10"
+      : accent === "fuchsia"
+      ? "from-fuchsia-400/25 to-violet-500/10"
+      : accent === "amber"
+      ? "from-amber-300/25 to-rose-400/10"
+      : "from-violet-500/25 to-fuchsia-500/10";
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur">
+      <div className={`absolute -inset-10 opacity-70 blur-2xl bg-gradient-to-br ${glow}`} />
+      <div className="relative">{children}</div>
+    </div>
+  );
 }
 
 export function Field({
@@ -125,9 +208,9 @@ export function Field({
 }) {
   return (
     <label className="grid gap-1">
-      <span className="text-sm font-medium">{label}</span>
+      <span className="text-sm font-medium text-white/85">{label}</span>
       <input
-        className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-300 focus:shadow-[0_0_0_4px_rgba(99,102,241,0.12)]"
+        className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-sm text-white/90 outline-none placeholder:text-white/35 focus:border-white/20 focus:shadow-[0_0_0_4px_rgba(168,85,247,0.18)]"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -137,58 +220,43 @@ export function Field({
   );
 }
 
-export function StepPill({
-  done,
-  title,
-  subtitle,
-}: {
-  done: boolean;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div
-      className={[
-        "flex items-start justify-between gap-3 rounded-2xl border p-4 shadow-sm",
-        done ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white",
-      ].join(" ")}
-    >
-      <div>
-        <div className="text-sm font-semibold">{title}</div>
-        <div className="mt-1 text-xs text-zinc-500">{subtitle}</div>
-      </div>
-
-      <div
-        className={[
-          "grid h-9 w-9 place-items-center rounded-2xl border",
-          done ? "border-emerald-200 bg-white text-emerald-700" : "border-zinc-200 bg-white text-zinc-500",
-        ].join(" ")}
-      >
-        {done ? <IconCheck /> : <IconDot />}
-      </div>
-    </div>
-  );
-}
-
 export function Metric({
   label,
   value,
   hint,
   icon,
+  accent = "violet",
 }: {
   label: string;
   value: string;
   hint: string;
   icon: React.ReactNode;
+  accent?: "violet" | "cyan" | "emerald" | "fuchsia" | "amber";
 }) {
+  const tone =
+    accent === "cyan"
+      ? "from-cyan-400/22 to-blue-500/8"
+      : accent === "emerald"
+      ? "from-emerald-400/22 to-lime-500/8"
+      : accent === "fuchsia"
+      ? "from-fuchsia-400/22 to-violet-500/8"
+      : accent === "amber"
+      ? "from-amber-300/22 to-rose-400/8"
+      : "from-violet-500/22 to-fuchsia-500/8";
+
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-500">{label}</div>
-        <div className="text-zinc-600">{icon}</div>
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+      <div className={`absolute inset-0 bg-gradient-to-br ${tone}`} />
+      <div className="relative">
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-white/55">{label}</div>
+          <div className="text-white/70">{icon}</div>
+        </div>
+        <div className="mt-2 text-xl font-semibold tracking-tight text-white/90">
+          {value}
+        </div>
+        <div className="mt-1 text-xs text-white/45">{hint}</div>
       </div>
-      <div className="mt-2 text-xl font-semibold tracking-tight">{value}</div>
-      <div className="mt-1 text-xs text-zinc-400">{hint}</div>
     </div>
   );
 }
@@ -196,8 +264,11 @@ export function Metric({
 export function ConfidenceBar({ pct }: { pct: number }) {
   const p = Math.max(0, Math.min(100, pct));
   return (
-    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${p}%` }} />
+    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-300 to-violet-400"
+        style={{ width: `${p}%` }}
+      />
     </div>
   );
 }
@@ -205,7 +276,13 @@ export function ConfidenceBar({ pct }: { pct: number }) {
 /* Icons */
 export function IconPaw() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-zinc-800">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      className="text-white/85"
+    >
       <path
         d="M8.5 12.5c-1.3 0-2.5-1.5-2.5-3.1S7.2 6 8.5 6s2.5 1.5 2.5 3.4-1.2 3.1-2.5 3.1Z"
         stroke="currentColor"
@@ -254,7 +331,6 @@ export function IconHeart() {
     </svg>
   );
 }
-
 export function IconWave() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
@@ -262,7 +338,6 @@ export function IconWave() {
     </svg>
   );
 }
-
 export function IconMove() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
@@ -271,47 +346,15 @@ export function IconMove() {
     </svg>
   );
 }
-
 export function IconBark() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M5 12v-2a3 3 0 0 1 3-3h1l2-2h2l2 2h1a3 3 0 0 1 3 3v2"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7 12v5a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
+      <path d="M5 12v-2a3 3 0 0 1 3-3h1l2-2h2l2 2h1a3 3 0 0 1 3 3v2" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M7 12v5a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-5" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
       <path d="M4 13h-1M20 13h1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
-
-export function IconBrain() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="opacity-90">
-      <path
-        d="M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0 0 6v1a3 3 0 0 0 3 3"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 0 6v1a3 3 0 0 1-3 3"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path d="M9 7h6M9 17h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.7" />
-    </svg>
-  );
-}
-
 export function IconSmile() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="opacity-90">
@@ -320,7 +363,6 @@ export function IconSmile() {
     </svg>
   );
 }
-
 export function IconCalm() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="opacity-90">
@@ -330,7 +372,6 @@ export function IconCalm() {
     </svg>
   );
 }
-
 export function IconAlert() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="opacity-90">
@@ -342,22 +383,6 @@ export function IconAlert() {
         strokeWidth="1.7"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-export function IconCheck() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M20 7 10 17l-5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function IconDot() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="opacity-80">
-      <path d="M12 12h.01" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
     </svg>
   );
 }

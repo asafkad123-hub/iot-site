@@ -24,3 +24,33 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* --- Make it feel premium --- */
+:root {
+  --ring: 0 0 0 6px rgba(99, 102, 241, 0.14);
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+body {
+  background: #fff;
+}
+
+/* nicer selection */
+::selection {
+  background: rgba(99,102,241,.18);
+}
+
+/* smoother rendering */
+html { text-rendering: geometricPrecision; }
+
+/* subtle noise feel (optional) */
+.bg-noise:before{
+  content:"";
+  position:fixed; inset:0;
+  pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.22'/%3E%3C/svg%3E");
+  mix-blend-mode: soft-light;
+  opacity:.25;
+}
+
