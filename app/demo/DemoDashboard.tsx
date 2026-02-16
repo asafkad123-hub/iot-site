@@ -61,7 +61,9 @@ function AnimatedDog({ emotion, activityState, isBarking }: { emotion: string; a
       
       {isBarking && (
         <div className="absolute top-8 right-12 animate-bounce z-20">
-          <IconBark className="w-12 h-12 text-white/70 drop-shadow-[0_0_15px_rgba(255,255,255,0.4)]" />
+          <span className="inline-block w-12 h-12 text-white/70 drop-shadow-[0_0_15px_rgba(255,255,255,0.4)]">
+            <IconBark />
+            </span>
         </div>
       )}
 
@@ -211,7 +213,10 @@ export default function DemoDashboard() {
                 : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
               }`}
             >
-              <IconBark className={metrics.isBarking ? "animate-pulse" : ""} />
+              <span className={metrics.isBarking ? "animate-pulse inline-block" : "inline-block"}>
+                <IconBark />
+              </span>
+
               {metrics.isBarking ? "BARKING: ACTIVE" : "BARKING: SILENT"}
             </button>
 
