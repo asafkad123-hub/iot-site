@@ -13,8 +13,11 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       const { data: { session } } = await supabase.auth.getSession();
       
       // דפים שמותר לראות בלי להתחבר
-      const publicPages = ["/", "/login"];
-      const isPublicPage = publicPages.includes(pathname);
+      // דפים שמותר לראות בלי להתחבר
+      const publicPages = ["/", "/login", "/demo"];
+      const isPublicPage =
+        publicPages.includes(pathname) || pathname.startsWith("/demo");
+
 
       if (!session && !isPublicPage) {
         // אם לא מחובר ומנסה להיכנס לדף מוגן (דשבורד/סטאפ) -> לוגין

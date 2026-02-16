@@ -43,14 +43,28 @@ export default function LandingPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-6 pt-4 justify-center lg:justify-start">
-                <a href="/login" className="w-full sm:w-auto text-center px-12 py-5 bg-gradient-to-r from-violet-600 to-cyan-500 rounded-[20px] font-black text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-violet-500/20">
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <a
+                  href="/login"
+                  className="w-full sm:w-auto text-center px-12 py-5 bg-gradient-to-r from-violet-600 to-cyan-500 rounded-[20px] font-black text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-violet-500/20"
+                >
                   Get Started
                 </a>
-                <div className="flex flex-col items-center lg:items-start">
-                  <span className="text-white/30 text-[9px] font-black uppercase tracking-[0.3em]">System Status</span>
-                  <span className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest">v2.0 Deploy Ready</span>
-                </div>
+
+                {/* הכפתור החדש */}
+                <a
+                  href="/demo"
+                  className="w-full sm:w-auto text-center px-12 py-5 rounded-[20px] font-black text-sm uppercase tracking-widest border border-white/15 bg-white/5 hover:bg-white/10 hover:scale-105 active:scale-95 transition-all"
+                >
+                  Demo
+                </a>
               </div>
+
+              <div className="flex flex-col items-center lg:items-start">
+                <span className="text-white/30 text-[9px] font-black uppercase tracking-[0.3em]">System Status</span>
+                <span className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest">v2.0 Deploy Ready</span>
+              </div>
+            </div>
             </div>
 
             {/* Right Content - Futuristic Card */}
