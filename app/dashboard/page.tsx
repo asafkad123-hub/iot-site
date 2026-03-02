@@ -19,6 +19,8 @@ import {
 
 export default function DashboardPage() {
   const [dog, setDog] = useState<any>(null);
+  // משתנה חדש עבור הנתונים מה-ESP32
+  const [liveMetrics, setLiveMetrics] = useState<any>(null); 
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -29,37 +31,62 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const getData = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    const { data: { session } } = await supabase.auth.getSession();
     if (!session) return router.push("/login");
 
-    const { data } = await supabase
+    // 1. שליפת פרופיל הכלב
+    const { data: dogData } = await supabase
       .from("dogs")
       .select("*")
       .eq("user_id", session.user.id)
       .single();
 
-    if (data) {
-      setDog(data);
+    if (dogData) {
+      setDog(dogData);
       setEditForm({
-        name: data.name ?? "",
-        breed: data.breed ?? "",
-        weight: String(data.weight ?? ""),
-        age: String(data.age ?? ""),
+        name: dogData.name ?? "",
+        breed: dogData.breed ?? "",
+        weight: String(dogData.weight ?? ""),
+        age: String(dogData.age ?? ""),
       });
+    }
+
+    // 2. שליפת הנתון האחרון מה-ESP32 (טבלת המדדים)
+    const { data: metricsData } = await supabase
+      .from("dog_metrics")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (metricsData) {
+      setLiveMetrics(metricsData);
     }
   };
 
   useEffect(() => {
     getData();
+
+    // 3. הגדרת האזנה לשינויים בזמן אמת (Realtime)
+    const channel = supabase
+      .channel("realtime-dog-metrics")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "dog_metrics" },
+        (payload) => {
+          console.log("נתון חדש מה-ESP32!", payload.new);
+          setLiveMetrics(payload.new); // עדכון הדף בנתון החדש
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleUpdate = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
+    const { data: { session } } = await supabase.auth.getSession();
     const { error } = await supabase
       .from("dogs")
       .update({
@@ -81,14 +108,14 @@ export default function DashboardPage() {
     router.push("/");
   };
 
-  // --- Demo-like metrics (fallback עד שיש דאטא אמיתי) ---
-  const emotion = dog?.emotion ?? "Happy";
-  const confidencePct = dog?.confidence_pct ?? 84; // עדכן לשם עמודה אמיתי כשתהיה
-  const heartRateBpm = dog?.heart_rate_bpm ?? 98;
-  const hrvMs = dog?.hrv_ms ?? 52;
-  const activityState = dog?.activity_state ?? "Moving";
-  const barking = dog?.barking ?? false; // boolean
-  const barkingLabel = barking ? "Yes" : "No";
+  // --- שימוש בנתונים האמיתיים מה-ESP32 ---
+  // אם אין עדיין נתונים, נשתמש בערכי ברירת מחדל
+  const emotion = liveMetrics?.emotion ?? "Waiting...";
+  const confidencePct = 85; // אפשר להוסיף עמודה כזו ב-ESP32 אם תרצה
+  const heartRateBpm = liveMetrics?.heart_rate ?? "--";
+  const hrvMs = liveMetrics?.hrv ?? "--";
+  const activityState = liveMetrics?.posture ?? "Unknown";
+  const barkingLabel = liveMetrics?.emotion === "Barking" ? "Yes" : "No";
 
   return (
     <PageShell
@@ -112,101 +139,56 @@ export default function DashboardPage() {
             <SecondaryButton onClick={() => setIsEditing(!isEditing)}>
               {isEditing ? "Cancel" : "Edit Profile"}
             </SecondaryButton>
-            <Pill tone="emerald" label="AI Inference Live" />
+            <Pill tone={liveMetrics ? "emerald" : "amber"} label={liveMetrics ? "AI Inference Live" : "Connecting..."} />
           </div>
         </div>
 
         {/* Dog Profile Card */}
         <div className="mb-6 sm:mb-8">
           <Card accent="violet">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-              <div>
-                <div className="text-xl sm:text-2xl font-black tracking-tight">
-                  Dog Profile
-                </div>
-                <div className="text-white/40 text-sm italic">
-                  {isEditing ? "Edit and save your dog's details" : "Saved details"}
-                </div>
-              </div>
-            </div>
-
-            {isEditing ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                <Field
-                  label="Name"
-                  value={editForm.name}
-                  onChange={(v: any) => setEditForm({ ...editForm, name: v })}
-                />
-                <Field
-                  label="Breed"
-                  value={editForm.breed}
-                  onChange={(v: any) => setEditForm({ ...editForm, breed: v })}
-                />
-                <Field
-                  label="Age"
-                  type="number"
-                  value={editForm.age}
-                  onChange={(v: any) => setEditForm({ ...editForm, age: v })}
-                />
-                <Field
-                  label="Weight"
-                  type="number"
-                  value={editForm.weight}
-                  onChange={(v: any) => setEditForm({ ...editForm, weight: v })}
-                />
-
-                <div className="lg:col-span-4 pt-2">
-                  <PrimaryButton onClick={handleUpdate}>
-                    Save Changes
-                  </PrimaryButton>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Name
+             {/* ... (כל החלק של ה-Profile נשאר אותו דבר כמו ששלחת) ... */}
+             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+               <div>
+                 <div className="text-xl sm:text-2xl font-black tracking-tight">Dog Profile</div>
+                 <div className="text-white/40 text-sm italic">{isEditing ? "Edit details" : "Saved details"}</div>
+               </div>
+             </div>
+             {isEditing ? (
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                  <Field label="Name" value={editForm.name} onChange={(v: any) => setEditForm({ ...editForm, name: v })} />
+                  <Field label="Breed" value={editForm.breed} onChange={(v: any) => setEditForm({ ...editForm, breed: v })} />
+                  <Field label="Age" type="number" value={editForm.age} onChange={(v: any) => setEditForm({ ...editForm, age: v })} />
+                  <Field label="Weight" type="number" value={editForm.weight} onChange={(v: any) => setEditForm({ ...editForm, weight: v })} />
+                  <div className="lg:col-span-4 pt-2">
+                    <PrimaryButton onClick={handleUpdate}>Save Changes</PrimaryButton>
                   </div>
-                  <div className="mt-1 text-base sm:text-lg font-black text-white/85">
-                    {dog?.name || "—"}
+               </div>
+             ) : (
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Name</div>
+                    <div className="mt-1 text-base font-black text-white/85">{dog?.name || "—"}</div>
                   </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Breed
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Breed</div>
+                    <div className="mt-1 text-base font-black text-white/85">{dog?.breed || "—"}</div>
                   </div>
-                  <div className="mt-1 text-base sm:text-lg font-black text-white/85">
-                    {dog?.breed || "—"}
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Age</div>
+                    <div className="mt-1 text-base font-black text-white/85">{dog?.age || "—"}</div>
                   </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Age
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Weight</div>
+                    <div className="mt-1 text-base font-black text-white/85">{dog?.weight || "—"}kg</div>
                   </div>
-                  <div className="mt-1 text-base sm:text-lg font-black text-white/85">
-                    {dog?.age ?? "—"}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Weight
-                  </div>
-                  <div className="mt-1 text-base sm:text-lg font-black text-white/85">
-                    {dog?.weight ?? "—"}kg
-                  </div>
-                </div>
-              </div>
-            )}
+               </div>
+             )}
           </Card>
         </div>
 
-        {/* Demo-like metrics */}
+        {/* Real Metrics Section */}
         {!isEditing ? (
           <>
-            {/* Emotion + Confidence */}
             <Card accent="fuchsia" className="mb-6 sm:mb-8">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
                 <div className="flex items-center gap-4 sm:gap-6">
@@ -218,39 +200,24 @@ export default function DashboardPage() {
                       {emotion}
                     </div>
                     <div className="text-sm text-white/40 italic">
-                      Emotion prediction + confidence
+                      Live AI Prediction from ESP32
                     </div>
                   </div>
                 </div>
-
                 <div className="sm:text-right">
-                  <div className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">
-                    Confidence
-                  </div>
-                  <div className="text-xl sm:text-2xl font-black text-white/90 tracking-tighter">
-                    {confidencePct}%
-                  </div>
+                   <div className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Status</div>
+                   <div className="text-xl font-black text-white/90">{liveMetrics ? "CONNECTED" : "OFFLINE"}</div>
                 </div>
               </div>
-
               <div className="mt-5">
                 <ConfidenceBar pct={confidencePct} />
               </div>
             </Card>
 
-            {/* Metrics grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Metric
-                label="Heart Rate"
-                value={`${heartRateBpm} BPM`}
-                icon={<IconHeart />}
-              />
+              <Metric label="Heart Rate" value={`${heartRateBpm} BPM`} icon={<IconHeart />} />
               <Metric label="HRV" value={`${hrvMs} ms`} icon={<IconHeart />} />
-              <Metric
-                label="Activity State"
-                value={activityState}
-                icon={<IconMove />}
-              />
+              <Metric label="Posture" value={activityState} icon={<IconMove />} />
               <Metric label="Barking" value={barkingLabel} icon={<IconBark />} />
             </div>
           </>
