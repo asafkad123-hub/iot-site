@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import {
@@ -130,10 +130,7 @@ function combineRussellVectors(v1: RussellVec | null, v2: RussellVec | null) {
   const b = v2 ?? { valence: 0, arousal: 0, weight: 0 };
 
   const sumW = a.weight + b.weight;
-
-  if (sumW <= 0.0001) {
-    return classifyRussell(0, 0);
-  }
+  if (sumW <= 0.0001) return classifyRussell(0, 0);
 
   const valence = (a.valence * a.weight + b.valence * b.weight) / sumW;
   const arousal = (a.arousal * a.weight + b.arousal * b.weight) / sumW;
@@ -155,12 +152,8 @@ function pct(n: any) {
 
 export default function DashboardPage() {
   const [dog, setDog] = useState<any>(null);
-
   const [liveMetrics, setLiveMetrics] = useState<any>(null);
   const [barkAnalysis, setBarkAnalysis] = useState<any>(null);
-
-  const [finalEmotion, setFinalEmotion] = useState<string>("Waiting...");
-  const [finalConfidencePct, setFinalConfidencePct] = useState<number>(0);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -169,6 +162,9 @@ export default function DashboardPage() {
     weight: "",
     age: "",
   });
+
+  const [assistantText, setAssistantText] = useState("Waiting for data…");
+  const [assistantStatus, setAssistantStatus] = useState<"idle" | "thinking" | "error">("idle");
 
   const router = useRouter();
 
@@ -180,15 +176,54 @@ export default function DashboardPage() {
     router.refresh();
   };
 
-  const recomputeFinalEmotion = (metrics: any, bark: any) => {
-    const vecMetrics = getRussellFromDogMetrics(metrics);
-    const vecBark = getRussellFromBarkAnalysis(bark);
-    const combined = combineRussellVectors(vecMetrics, vecBark);
+  const llmCooldownRef = useRef<number>(0);
+  const abortRef = useRef<AbortController | null>(null);
 
-    setFinalEmotion(combined.emotion);
+  const finalRussell = useMemo(() => {
+    const vecMetrics = getRussellFromDogMetrics(liveMetrics);
+    const vecBark = getRussellFromBarkAnalysis(barkAnalysis);
+    return combineRussellVectors(vecMetrics, vecBark);
+  }, [liveMetrics, barkAnalysis]);
 
-    const pctVal = Math.round(clamp(combined.magnitude / 1.0, 0, 1) * 100);
-    setFinalConfidencePct(pctVal);
+  const finalEmotion = finalRussell.emotion;
+  const finalConfidencePct = Math.round(clamp(finalRussell.magnitude / 1.0, 0, 1) * 100);
+
+  const generateAssistance = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - llmCooldownRef.current < 1500) return;
+    llmCooldownRef.current = now;
+
+    if (!liveMetrics && !barkAnalysis) return;
+
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    setAssistantStatus("thinking");
+
+    try {
+      const res = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortRef.current.signal,
+        body: JSON.stringify({
+          dog,
+          liveMetrics,
+          barkAnalysis,
+          finalEmotion,
+          finalRussell,
+        }),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+
+      setAssistantText(String(json?.text ?? "").trim() || "No response.");
+      setAssistantStatus("idle");
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      setAssistantStatus("error");
+      setAssistantText("Assistant failed to update. Check server logs / API key.");
+    }
   };
 
   const getData = async () => {
@@ -231,7 +266,7 @@ export default function DashboardPage() {
 
     if (barkData) setBarkAnalysis(barkData);
 
-    recomputeFinalEmotion(metricsData ?? null, barkData ?? null);
+    setTimeout(() => generateAssistance(true), 0);
   };
 
   useEffect(() => {
@@ -243,9 +278,7 @@ export default function DashboardPage() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "dog_metrics" },
         async (payload) => {
-          console.log("New dog_metrics row:", payload.new);
-          const newMetrics = payload.new;
-          setLiveMetrics(newMetrics);
+          setLiveMetrics(payload.new);
 
           const { data: barkData } = await supabase
             .from("bark_analysis_results")
@@ -256,7 +289,6 @@ export default function DashboardPage() {
 
           if (barkData) setBarkAnalysis(barkData);
 
-          recomputeFinalEmotion(newMetrics, barkData ?? barkAnalysis);
           refreshWithCooldown();
         }
       )
@@ -268,9 +300,7 @@ export default function DashboardPage() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "bark_analysis_results" },
         async (payload) => {
-          console.log("New bark_analysis_results row:", payload.new);
-          const newBark = payload.new;
-          setBarkAnalysis(newBark);
+          setBarkAnalysis(payload.new);
 
           const { data: metricsData } = await supabase
             .from("dog_metrics")
@@ -281,7 +311,6 @@ export default function DashboardPage() {
 
           if (metricsData) setLiveMetrics(metricsData);
 
-          recomputeFinalEmotion(metricsData ?? liveMetrics, newBark);
           refreshWithCooldown();
         }
       )
@@ -290,13 +319,12 @@ export default function DashboardPage() {
     return () => {
       supabase.removeChannel(metricsChannel);
       supabase.removeChannel(barkChannel);
+      abortRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    recomputeFinalEmotion(liveMetrics, barkAnalysis);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    generateAssistance(false);
   }, [liveMetrics, barkAnalysis]);
 
   const handleUpdate = async () => {
@@ -325,17 +353,11 @@ export default function DashboardPage() {
     router.push("/");
   };
 
-  // =========================
-  // DISPLAY VALUES
-  // =========================
-
   const heartRateBpm = liveMetrics?.heart_rate ?? "--";
   const hrvMs = liveMetrics?.hrv ?? "--";
   const activityState = liveMetrics?.posture ?? "Unknown";
-
   const isConnected = Boolean(liveMetrics || barkAnalysis);
 
-  // Barking label (prefer is_bark boolean if you added it)
   const barkingLabel =
     typeof barkAnalysis?.is_bark === "boolean"
       ? barkAnalysis.is_bark
@@ -345,8 +367,6 @@ export default function DashboardPage() {
         ? "Yes"
         : "No";
 
-  // “What kind of bark is this?”
-  // Uses best available fields from bark_analysis_results
   const barkKind =
     barkAnalysis?.consensus_emotion ??
     barkAnalysis?.mamba_pred ??
@@ -354,7 +374,6 @@ export default function DashboardPage() {
     barkAnalysis?.dtw_pred ??
     "—";
 
-  // Additional bark stats
   const barkTime = formatTime(barkAnalysis?.created_at);
   const barkDuration =
     typeof barkAnalysis?.duration_sec === "number"
@@ -363,7 +382,6 @@ export default function DashboardPage() {
   const dogConf = pct(barkAnalysis?.dog_confidence);
   const mambaConf = pct(barkAnalysis?.mamba_max_prob);
 
-  // If you stored probs as json array [happy, sad, angry]
   const probs = Array.isArray(barkAnalysis?.probs) ? barkAnalysis.probs : null;
   const probHappy = probs?.[0];
   const probSad = probs?.[1];
@@ -386,20 +404,16 @@ export default function DashboardPage() {
   return (
     <PageShell
       subtitle="Live Telemetry"
-      rightSlot={
-        <SecondaryButton onClick={handleLogout}>Logout</SecondaryButton>
-      }
+      rightSlot={<SecondaryButton onClick={handleLogout}>Logout</SecondaryButton>}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6 sm:mb-10">
           <div>
             <h2 className="text-4xl sm:text-6xl font-black text-white tracking-tighter">
               {(dog?.name || "Dog") + "'s Status"}
             </h2>
             <p className="text-white/40 mt-2 font-bold uppercase tracking-[0.2em] text-[10px]">
-              {dog?.breed || "—"} • {dog?.age ?? "—"} Years Old •{" "}
-              {dog?.weight ?? "—"}kg
+              {dog?.breed || "—"} • {dog?.age ?? "—"} Years Old • {dog?.weight ?? "—"}kg
             </p>
           </div>
 
@@ -414,14 +428,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Dog Profile Card */}
         <div className="mb-6 sm:mb-8">
           <Card accent="violet">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
-                <div className="text-xl sm:text-2xl font-black tracking-tight">
-                  Dog Profile
-                </div>
+                <div className="text-xl sm:text-2xl font-black tracking-tight">Dog Profile</div>
                 <div className="text-white/40 text-sm italic">
                   {isEditing ? "Edit details" : "Saved details"}
                 </div>
@@ -430,74 +441,37 @@ export default function DashboardPage() {
 
             {isEditing ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                <Field
-                  label="Name"
-                  value={editForm.name}
-                  onChange={(v: any) => setEditForm({ ...editForm, name: v })}
-                />
-                <Field
-                  label="Breed"
-                  value={editForm.breed}
-                  onChange={(v: any) => setEditForm({ ...editForm, breed: v })}
-                />
-                <Field
-                  label="Age"
-                  type="number"
-                  value={editForm.age}
-                  onChange={(v: any) => setEditForm({ ...editForm, age: v })}
-                />
-                <Field
-                  label="Weight"
-                  type="number"
-                  value={editForm.weight}
-                  onChange={(v: any) => setEditForm({ ...editForm, weight: v })}
-                />
+                <Field label="Name" value={editForm.name} onChange={(v: any) => setEditForm({ ...editForm, name: v })} />
+                <Field label="Breed" value={editForm.breed} onChange={(v: any) => setEditForm({ ...editForm, breed: v })} />
+                <Field label="Age" type="number" value={editForm.age} onChange={(v: any) => setEditForm({ ...editForm, age: v })} />
+                <Field label="Weight" type="number" value={editForm.weight} onChange={(v: any) => setEditForm({ ...editForm, weight: v })} />
                 <div className="lg:col-span-4 pt-2">
-                  <PrimaryButton onClick={handleUpdate}>
-                    Save Changes
-                  </PrimaryButton>
+                  <PrimaryButton onClick={handleUpdate}>Save Changes</PrimaryButton>
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Name
-                  </div>
-                  <div className="mt-1 text-base font-black text-white/85">
-                    {dog?.name || "—"}
-                  </div>
+                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Name</div>
+                  <div className="mt-1 text-base font-black text-white/85">{dog?.name || "—"}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Breed
-                  </div>
-                  <div className="mt-1 text-base font-black text-white/85">
-                    {dog?.breed || "—"}
-                  </div>
+                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Breed</div>
+                  <div className="mt-1 text-base font-black text-white/85">{dog?.breed || "—"}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Age
-                  </div>
-                  <div className="mt-1 text-base font-black text-white/85">
-                    {dog?.age || "—"}
-                  </div>
+                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Age</div>
+                  <div className="mt-1 text-base font-black text-white/85">{dog?.age || "—"}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Weight
-                  </div>
-                  <div className="mt-1 text-base font-black text-white/85">
-                    {dog?.weight || "—"}kg
-                  </div>
+                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">Weight</div>
+                  <div className="mt-1 text-base font-black text-white/85">{dog?.weight || "—"}kg</div>
                 </div>
               </div>
             )}
           </Card>
         </div>
 
-        {/* Live Section */}
         {!isEditing ? (
           <>
             <Card accent="fuchsia" className="mb-6 sm:mb-8">
@@ -516,12 +490,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="sm:text-right">
-                  <div className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">
-                    Status
-                  </div>
-                  <div className="text-xl font-black text-white/90">
-                    {isConnected ? "CONNECTED" : "OFFLINE"}
-                  </div>
+                  <div className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Status</div>
+                  <div className="text-xl font-black text-white/90">{isConnected ? "CONNECTED" : "OFFLINE"}</div>
                 </div>
               </div>
               <div className="mt-5">
@@ -530,17 +500,12 @@ export default function DashboardPage() {
             </Card>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 sm:mb-8">
-              <Metric
-                label="Heart Rate"
-                value={`${heartRateBpm} BPM`}
-                icon={<IconHeart />}
-              />
+              <Metric label="Heart Rate" value={`${heartRateBpm} BPM`} icon={<IconHeart />} />
               <Metric label="HRV" value={`${hrvMs} ms`} icon={<IconHeart />} />
               <Metric label="Posture" value={activityState} icon={<IconMove />} />
               <Metric label="Barking" value={barkingLabel} icon={<IconBark />} />
             </div>
 
-            {/* NEW: Bark Details UI */}
             <Card accent="amber" className="mb-6 sm:mb-8">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -552,25 +517,17 @@ export default function DashboardPage() {
                       Bark Analysis
                     </div>
                     <div className="text-sm text-white/40 italic">
-                      What kind of bark + raw analysis details (latest row)
+                      Kind of bark + raw analysis (latest row)
                     </div>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <Pill
-                    tone={typeof barkAnalysis?.is_bark === "boolean" ? (barkAnalysis.is_bark ? "emerald" : "amber") : "amber"}
-                    label={typeof barkAnalysis?.is_bark === "boolean" ? (barkAnalysis.is_bark ? "BARK DETECTED" : "NOT A BARK") : "UNKNOWN"}
-                  />
-                  <Pill
-                    tone="violet"
-                    label={`Last: ${barkTime}`}
-                  />
+                  <Pill tone="violet" label={`Last: ${barkTime}`} />
                 </div>
               </div>
 
               <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Kind of bark */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
                     Kind of Bark (Best Available)
@@ -578,12 +535,8 @@ export default function DashboardPage() {
                   <div className="mt-2 text-2xl font-black text-white/90 uppercase">
                     {String(barkKind)}
                   </div>
-                  <div className="mt-2 text-sm text-white/40">
-                    Uses consensus → mamba → russell → dtw (fallback order)
-                  </div>
                 </div>
 
-                {/* Model confidence */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
                     Confidence + Validation
@@ -608,10 +561,9 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Russell + Probabilities */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Russell Vector + Class Probabilities
+                    Russell + Probabilities
                   </div>
 
                   <div className="mt-3 grid grid-cols-2 gap-3">
@@ -643,17 +595,50 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+            </Card>
 
-              {/* Optional: raw JSON peek */}
-              <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.25em]">
-                    Latest bark_analysis_results row (debug)
+            <Card accent="emerald" className="mb-6 sm:mb-8">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div>
+                  <div className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    Assistance
+                  </div>
+                  <div className="text-sm text-white/40 italic">
+                    Live explanation + suggestions based on latest Supabase rows
                   </div>
                 </div>
-                <pre className="mt-3 text-xs text-white/60 overflow-x-auto">
-                  {JSON.stringify(barkAnalysis ?? {}, null, 2)}
-                </pre>
+
+                <div className="flex items-center gap-2">
+                  <Pill
+                    tone={
+                      assistantStatus === "thinking"
+                        ? "amber"
+                        : assistantStatus === "error"
+                          ? "fuchsia"
+                          : "emerald"
+                    }
+                    label={
+                      assistantStatus === "thinking"
+                        ? "THINKING…"
+                        : assistantStatus === "error"
+                          ? "ERROR"
+                          : "UPDATED"
+                    }
+                  />
+                  <SecondaryButton onClick={() => generateAssistance(true)}>
+                    Refresh Assistant
+                  </SecondaryButton>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="text-sm text-white/85 whitespace-pre-wrap leading-relaxed">
+                  {assistantText}
+                </div>
+              </div>
+
+              <div className="mt-4 text-xs text-white/40">
+                Inputs: dog_metrics + bark_analysis_results + combined Russell emotion.
               </div>
             </Card>
           </>
