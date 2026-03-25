@@ -3,9 +3,17 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
+// הגדרת הלקוח בצורה חכמה:
+// אם אנחנו בסביבת פיתוח (Local) -> משתמש ב-LM Studio
+// אם אנחנו בשרת (Vercel) -> משתמש ב-Groq
 const client = new OpenAI({
-  baseURL: "http://127.0.0.1:1234/v1",
-  apiKey: "lm-studio", 
+  baseURL: process.env.NODE_ENV === "development" 
+    ? "http://127.0.0.1:1234/v1" 
+    : "https://api.groq.com/openai/v1",
+  
+  apiKey: process.env.NODE_ENV === "development" 
+    ? "lm-studio" 
+    : process.env.GROQ_API_KEY,
 });
 
 export async function POST(req: Request) {
@@ -13,7 +21,11 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const completion = await client.chat.completions.create({
-      model: "nvidia/nemotron-3-nano-4b", 
+      // בחירת מודל לפי הסביבה
+      model: process.env.NODE_ENV === "development" 
+        ? "nvidia/nemotron-3-nano-4b" 
+        : "llama-3.3-70b-versatile", 
+      
       temperature: 0.6,
       messages: [
         {
@@ -41,19 +53,17 @@ export async function POST(req: Request) {
       ],
     });
 
-    // 1. Get the raw text from the model
+    // 1. קבלת הטקסט הגולמי
     let text = completion.choices?.[0]?.message?.content ?? "";
 
-    // 2. Remove the <think>...</think> block entirely
-    // This regex looks for "<think>", everything inside it (including newlines), 
-    // and the closing "</think>", then replaces it with nothing.
+    // 2. ניקוי בלוק המחשבות <think>
     text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
-    // 3. Return only the clean result
+    // 3. החזרת התוצאה הנקייה
     return NextResponse.json({ text });
 
   } catch (err: any) {
-    console.error("❌ local-nemotron-inference failed:", err);
+    console.error("❌ Inference failed:", err);
     return NextResponse.json(
       { error: "inference_failed", detail: String(err?.message ?? err) },
       { status: 500 }
