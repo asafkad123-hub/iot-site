@@ -29,7 +29,6 @@ export async function POST(req: Request) {
             "You interpret live collar data in plain, warm language. " +
             "Focus on trends, not raw numbers. " +
             "If heart rate is 0, assume sensor issue. " +
-            "If data is uncertain, hedge your language. " +
             "Never diagnose. Keep under 130 words. " +
             "Give 1–2 practical actions the owner can take right now.",
         },
@@ -57,13 +56,11 @@ export async function POST(req: Request) {
     });
 
     let text = completion.choices?.[0]?.message?.content ?? "";
-
-    // ניקוי תגיות מחשבה אם קיימות
     text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
     return NextResponse.json({ text });
   } catch (err: any) {
-    console.error("Inference failed:", err);
+    console.error("Assistant API error:", err);
     return NextResponse.json(
       { error: "inference_failed", detail: String(err?.message ?? err) },
       { status: 500 }

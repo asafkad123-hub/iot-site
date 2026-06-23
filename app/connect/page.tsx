@@ -38,9 +38,7 @@ export default function ConnectPage() {
 
       if (error) throw error;
 
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 1000);
+      router.push("/dashboard");
     } catch (err: any) {
       alert(err.message || "Failed to connect collar");
       setLoading(false);
