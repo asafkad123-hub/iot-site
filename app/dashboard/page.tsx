@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { PageShell, Card, Pill, SecondaryButton, Field, PrimaryButton } from "../_components/ds";
 import { computeTrends } from "@/lib/trends";
+import FamilyVideoWidget from "../family/FamilyVideoWidget";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -148,40 +149,39 @@ function fmtDuration(start: string, end: string | null) {
 }
 
 function evaluatePhysiology(data: any, isSelfTest: boolean) {
-  const alerts: string[] = [];
+  const alerts: any[] = [];
   let status: "normal" | "warning" | "critical" = "normal";
 
   if (!data) return { alerts, status };
 
-  // דוגמאות בדיקות (מותאם גנרי כדי שלא יישבר build)
-  const values = Object.values(data || {});
+  const limits = isSelfTest 
+    ? { hrHigh: 120, hrLow: 40, spo2Low: 94 }
+    : { hrHigh: 160, hrLow: 50, spo2Low: 93 };
 
-  for (const v of values) {
-    if (typeof v !== "number") continue;
-
-    if (v > 120) {
-      alerts.push("High value detected");
-      status = "warning";
-    }
-
-    if (v > 150) {
-      status = "critical";
-    }
-
-    if (v < 0.1) {
-      alerts.push("Low value detected");
-      status = "warning";
-    }
+  if (data.raw_hr > limits.hrHigh) {
+    alerts.push(`Elevated Heart Rate (${data.raw_hr.toFixed(0)} BPM)`);
+    status = "warning";
+  } else if (data.raw_hr < limits.hrLow && data.raw_hr > 0) {
+    alerts.push(`Bradycardia Alert (${data.raw_hr.toFixed(0)} BPM)`);
+    status = "warning";
   }
 
-  if (isSelfTest) {
-    alerts.push("Self-test mode active");
+  if (data.spo2 != null && data.spo2 < limits.spo2Low && data.spo2 > 0) {
+    alerts.push(`Low Blood Oxygen (${data.spo2.toFixed(0)}%)`);
+    status = "critical";
   }
 
-  return {
-    alerts,
-    status,
-  };
+  if (data.rr_count != null && data.rr_count > 40) {
+    alerts.push(`Elevated Respiratory Rate`);
+    status = status === "critical" ? "critical" : "warning";
+  }
+
+  if (data.wellbeing_deviation != null && data.wellbeing_deviation > 0.7) {
+    alerts.push(`High Wellbeing Deviation`);
+    status = status === "critical" ? "critical" : "warning";
+  }
+
+  return { alerts, status };
 }
 
 export default function DashboardPage() {
@@ -196,6 +196,7 @@ export default function DashboardPage() {
   const [newActivityLabel, setNewActivityLabel] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [lastBark, setLastBark] = useState<any>(null);
+  const [visionAnalysis, setVisionAnalysis] = useState<any>(null);
   const [editForm, setEditForm] = useState({ name: "", breed: "", weight: "", age: "", collar_id: "", species: "dog" });
 
   // activity review in 2D + human-label tracking
@@ -214,6 +215,10 @@ export default function DashboardPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiUpdatedAt, setAiUpdatedAt] = useState<number | null>(null);
+
+  const [activeCollars, setActiveCollars] = useState<any[]>([]);
+  const [showCollarBanner, setShowCollarBanner] = useState(false);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   const router = useRouter();
@@ -237,12 +242,24 @@ export default function DashboardPage() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return router.push("/login");
     
-    // FETCH FIX: Orders by active wearer and limit(1) to cleanly handle multiple profiles without crashing
-    const { data: dogs } = await supabase.from("dogs").select("*")
-      .eq("user_id", session.user.id)
-      .order("is_active_wearer", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .limit(1);
+    // FETCH 1: Global Collars, Statuses, and Current User's Dog in PARALLEL
+    const [
+      { data: globalCollars },
+      { data: statuses },
+      { data: dogs }
+    ] = await Promise.all([
+      supabase.rpc("get_global_collars"), // BYPASS RLS HERE
+      supabase.from("device_status").select("device_id, status"),
+      supabase.from("dogs").select("*").eq("user_id", session.user.id).order("is_active_wearer", { ascending: false }).order("updated_at", { ascending: false }).limit(1)
+    ]);
+
+    if (globalCollars) {
+      const merged = globalCollars.map((c: any) => {
+        const stat = statuses?.find((s: any) => s.device_id === c.collar_id);
+        return { ...c, status: stat?.status || "offline" };
+      });
+      setActiveCollars(merged);
+    }
       
     const d = dogs?.[0];
     if (!d) return;
@@ -250,31 +267,52 @@ export default function DashboardPage() {
     setDog(d);
     setEditForm({ name: d.name ?? "", breed: d.breed ?? "", weight: String(d.weight ?? ""),
       age: String(d.age ?? ""), collar_id: d.collar_id ?? "", species: d.species ?? "dog" });
-    await loadActivities(d.id);
 
-    const { data: motion } = await supabase.from("motion_data").select("*")
-      .eq("dog_id", d.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    // FETCH 2: Dog-specific data in PARALLEL to prevent waterfall delays
+    const motionReq = supabase.from("motion_data").select("*").eq("dog_id", d.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const affectReq = supabase.from("affect_states").select("*").eq("dog_id", d.id).order("created_at", { ascending: false }).limit(1000);
+    const queryReq = supabase.from("active_queries").select("*").eq("dog_id", d.id).eq("status", "pending").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const barkReq = supabase.from("affect_labels").select("*").eq("dog_id", d.id).eq("source", "audio").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const countReq = supabase.from("affect_labels").select("*", { count: "exact", head: true }).eq("dog_id", d.id);
+
+    const [
+      , // ignore loadActivities return
+      { data: motion },
+      { data: affect },
+      { data: q },
+      { data: bark },
+      { count }
+    ] = await Promise.all([
+      loadActivities(d.id),
+      motionReq,
+      affectReq,
+      queryReq,
+      barkReq,
+      countReq
+    ]);
+
     if (motion) setMotionData(motion);
-
-    const { data: affect } = await supabase.from("affect_states").select("*")
-      .eq("dog_id", d.id).order("created_at", { ascending: false }).limit(1000);
     if (affect && affect.length) { setAffectHistory(affect.reverse()); setAffectData(affect[affect.length - 1]); }
-
-    const { data: q } = await supabase.from("active_queries").select("*")
-      .eq("dog_id", d.id).eq("status", "pending").order("created_at", { ascending: false }).limit(1).maybeSingle();
     setPendingQuery(q ?? null);
-
-    const { data: bark } = await supabase.from("affect_labels").select("*")
-      .eq("dog_id", d.id).eq("source", "audio").order("created_at", { ascending: false }).limit(1).maybeSingle();
     setLastBark(bark ?? null);
-
-    // how many states the dog has been TAUGHT (human + audio labels) — shows HRLF accumulating
-    const { count } = await supabase.from("affect_labels")
-      .select("*", { count: "exact", head: true }).eq("dog_id", d.id);
     setTaughtCount(count ?? 0);
   };
 
   useEffect(() => { getData(); }, []);
+
+  // NEW: Global listener for device online/offline status updates
+  useEffect(() => {
+    const statusCh = supabase.channel("global-device-status")
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_status" }, (p) => {
+        const payload: any = p.new;
+        if (payload?.device_id) {
+          setActiveCollars((prev) => prev.map((c) =>
+            c.collar_id === payload.device_id ? { ...c, status: payload.status } : c
+          ));
+        }
+      }).subscribe();
+    return () => { supabase.removeChannel(statusCh); };
+  }, []);
 
   useEffect(() => {
     if (!dog?.id) return;
@@ -300,7 +338,10 @@ export default function DashboardPage() {
     }
   }, [aiMessages]);
 
-  const sendDeviceCommand = async (command: "START" | "STOP") => {
+  const sendDeviceCommand = async (command: "START" | "STOP" | "POWEROFF") => {
+    if (command === "POWEROFF") {
+      if (!window.confirm("Are you sure you want to safely shut down the collar? You will need to physically turn it back on.")) return;
+    }
     if (!dog?.collar_id) return;
     await supabase.from("device_commands").insert({ device_id: dog.collar_id, command, processed: false });
   };
@@ -420,40 +461,37 @@ export default function DashboardPage() {
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dog: dog ? { name: dog.name, breed: dog.breed, age: dog.age, species: dog.species } : null,
-          liveMetrics: {
-            heart_rate: affectData.raw_hr ?? null,
-            hrv_rmssd: affectData.raw_rmssd ?? null,
-            spo2: affectData.spo2 ?? null,
-            posture: affectData.posture ?? null,
-            restlessness: affectData.restlessness ?? null,
-            active_fraction: affectData.frac_active ?? null,
-            panksepp_state: affectData.panksepp_state ?? null,
-            wellbeing_deviation: affectData.wellbeing_deviation ?? null,
-            confidence: affectData.confidence ?? null,
-          },
-          barkAnalysis: lastBark
-            ? { valence: lastBark.valence_label, arousal: lastBark.arousal_label,
-                confidence: lastBark.confidence, heardAgo: timeAgo(lastBark.created_at) }
-            : null,
-          finalEmotion: affectData.predicted_emotion ?? null,
-          finalRussell: { valence: affectData.valence ?? null, arousal: affectData.arousal ?? null },
-          valenceReliable,
-          activeContext: activeSession?.activity_label ?? null,
-          trends,
-          messages: updatedMessages,
-          isChat: true,
-        }),
+          body: JSON.stringify({
+              dog,
+              liveMetrics: affectData,
+              motion: motionData,
+              barkAnalysis: lastBark,
+              finalEmotion:
+                  affectData?.predicted_emotion ||
+                  quadrantEmotion(
+                      affectData?.valence ?? 0,
+                      affectData?.arousal ?? 0
+                  ),
+              finalRussell: {
+                  valence: affectData?.valence ?? null,
+                  arousal: affectData?.arousal ?? null,
+              },
+              valenceReliable,
+              activeContext: activeSession?.activity_label ?? null,
+              trends,
+              visionAnalysis,
+              messages: updatedMessages,
+              isChat: true,
+          }),
       });
       const data = await res.json();
       if (data?.text) { 
         setAiMessages([...updatedMessages, { role: "assistant", content: data.text }]);
         setAiUpdatedAt(Date.now()); 
       }
-      else setAiError(data?.detail || "The local model didn't return a response. Is LM Studio running?");
+      else setAiError(data?.detail || "The AI service didn't return a response. Please try again.");
     } catch (e: any) {
-      setAiError(String(e?.message ?? e) + " — is the LM Studio server running on port 1234?");
+      setAiError(String(e?.message ?? e) + " — please try again in a moment.");
     } finally {
       setAiLoading(false);
     }
@@ -484,17 +522,83 @@ export default function DashboardPage() {
         
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6 sm:mb-10">
           <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Pill tone="cyan" label="Pro Mode" />
+              <button
+                onClick={() => router.push("/family")}
+                className="px-3 py-1 rounded-full bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-bold transition hover:bg-violet-500/30 flex items-center gap-1 cursor-pointer"
+              >
+                <span>🐾</span> Family Mode
+              </button>
+              <button
+                onClick={() => router.push("/choosemode")}
+                className="px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white/80 text-xs font-bold transition hover:bg-white/20 cursor-pointer"
+              >
+                🔄 Switch Mode
+              </button>
+            </div>
             <h2 className={`text-4xl sm:text-6xl font-black tracking-tighter ${tColor}`}>{(dog?.name || "Subject") + "'s Status"}</h2>
             {isSelfTest && <span className="text-xs text-amber-500 uppercase tracking-widest font-bold">Human self-test · audio dormant · weak labels + your HRFL drive learning</span>}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <SecondaryButton onClick={() => sendDeviceCommand("START")} className="bg-emerald-600/20 text-emerald-600 dark:text-emerald-500 border-emerald-500/50 hover:bg-emerald-600 hover:text-white">▶ Start</SecondaryButton>
-            <SecondaryButton onClick={() => sendDeviceCommand("STOP")} className="bg-red-600/20 text-red-600 dark:text-red-500 border-red-500/50 hover:bg-red-600 hover:text-white mr-2">⏸ Stop</SecondaryButton>
+            <SecondaryButton onClick={() => sendDeviceCommand("STOP")} className="bg-amber-600/20 text-amber-600 dark:text-amber-500 border-amber-500/50 hover:bg-amber-600 hover:text-white mr-2">⏸ Stop</SecondaryButton>
+            <SecondaryButton onClick={() => sendDeviceCommand("POWEROFF")} className="bg-red-600/20 text-red-600 dark:text-red-500 border-red-500/50 hover:bg-red-600 hover:text-white mr-2">⏻ Power Off</SecondaryButton>
+            {/* NEW: Collars Toggle Button */}
+            <SecondaryButton onClick={() => setShowCollarBanner(!showCollarBanner)}>{showCollarBanner ? "Hide Collars" : "📡 Active Collars"}</SecondaryButton>
             <SecondaryButton onClick={() => setIsEditing(!isEditing)}>{isEditing ? "Cancel" : "Edit Profile"}</SecondaryButton>
             <SecondaryButton onClick={() => setShowSettings(!showSettings)}>{showSettings ? "Hide Settings" : "⚙️ Settings"}</SecondaryButton>
             <Pill tone={isConnected ? "emerald" : "amber"} label={isConnected ? "STREAM ACTIVE" : "AWAITING TELEMETRY"} />
           </div>
         </div>
+
+        {/* NEW: Collars Notification Banner */}
+        {showCollarBanner && (
+          <div className="mb-8 animate-in slide-in-from-top-4 fade-in duration-200">
+            <Card accent="violet">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📡</span>
+                  <h3 className={`text-lg font-bold ${tColor}`}>System Active Collars</h3>
+                </div>
+                <button onClick={() => setShowCollarBanner(false)} className={`text-xs uppercase tracking-widest font-bold ${tMutedAlt} hover:text-violet-500 transition-colors`}>Close</button>
+              </div>
+              {activeCollars.length > 0 ? (
+                <div className="flex flex-wrap gap-3">
+                  {activeCollars.map((c, i) => {
+                    let dotClass = "bg-red-500";
+                    let textClass = "text-red-600 dark:text-red-400 font-bold";
+                    let label = "OFFLINE";
+
+                    if (c.status === "online") {
+                      dotClass = "bg-emerald-500 animate-pulse";
+                      textClass = "text-emerald-600 dark:text-emerald-400 font-bold";
+                      label = "ONLINE";
+                    } else if (c.status === "no_skin_contact") {
+                      dotClass = "bg-amber-500 animate-pulse";
+                      textClass = "text-amber-600 dark:text-amber-400 font-bold";
+                      label = "ONLINE (NO SKIN CONTACT)";
+                    }
+
+                    return (
+                      <div key={i} className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${borderBase} ${bgCardInt}`}>
+                        <div className={`h-2 w-2 rounded-full flex-shrink-0 ${dotClass}`}></div>
+                        <div className="flex flex-col">
+                          <span className={`text-sm font-bold ${tColor}`}>{c.name || "Unknown Profile"}</span>
+                          <span className={`text-[10px] font-mono uppercase tracking-widest ${tMuted}`}>
+                            USER: {c.user_id?.split('-')[0]} · {c.collar_id} · <span className={textClass}>{label}</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className={`text-sm ${tMuted}`}>No collars are currently assigned to any users in the system.</p>
+              )}
+            </Card>
+          </div>
+        )}
 
         {showSettings && (
           <div className="mb-8 animate-in slide-in-from-top-4 fade-in duration-200">
@@ -531,26 +635,28 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {!isEditing && lastBark && (
-          <div className="mb-8"><Card accent="violet">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🔊</span>
-                <h3 className={`text-xl font-bold ${tColor}`}>Last Bark Heard</h3>
+        {!isEditing && (
+          <div className="mb-8">
+            <Card accent="violet">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🔊</span>
+                  <h3 className={`text-xl font-bold ${tColor}`}>Last Bark Heard</h3>
+                </div>
+                <span className={`text-xs uppercase tracking-widest font-bold ${tMutedAlt}`}>{timeAgo(lastBark?.created_at || "")}</span>
               </div>
-              <span className={`text-xs uppercase tracking-widest font-bold ${tMutedAlt}`}>{timeAgo(lastBark.created_at)}</span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="rounded-xl border p-3" style={{ borderColor: (EMOTION_COLORS[barkEmotion!] || "#888") + "55", background: (EMOTION_COLORS[barkEmotion!] || "#888") + "12" }}>
-                <div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Emotion</div>
-                <div className="text-2xl font-black" style={{ color: EMOTION_COLORS[barkEmotion!] || (isLightMode ? '#000' : '#fff') }}>{barkEmotion}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="rounded-xl border p-3" style={{ borderColor: (EMOTION_COLORS[barkEmotion ?? "UNCERTAIN"] || "#888") + "55", background: (EMOTION_COLORS[barkEmotion ?? "UNCERTAIN"] || "#888") + "12" }}>
+                  <div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Emotion</div>
+                  <div className="text-2xl font-black" style={{ color: EMOTION_COLORS[barkEmotion ?? "UNCERTAIN"] || (isLightMode ? '#000' : '#fff') }}>{barkEmotion ?? "--"}</div>
+                </div>
+                <div className={`rounded-xl border p-3 ${borderBase} ${bgCardInt}`}><div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Valence</div><div className={`text-2xl font-black ${tColor}`}>{lastBark?.valence_label?.toFixed(2) ?? "--"}</div></div>
+                <div className={`rounded-xl border p-3 ${borderBase} ${bgCardInt}`}><div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Arousal</div><div className={`text-2xl font-black ${tColor}`}>{lastBark?.arousal_label?.toFixed(2) ?? "--"}</div></div>
+                <div className={`rounded-xl border p-3 ${borderBase} ${bgCardInt}`}><div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Model Confidence</div><div className={`text-2xl font-black ${tColor}`}>{lastBark?.confidence != null ? (lastBark.confidence * 100).toFixed(0) + "%" : "--"}</div></div>
               </div>
-              <div className={`rounded-xl border p-3 ${borderBase} ${bgCardInt}`}><div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Valence</div><div className={`text-2xl font-black ${tColor}`}>{lastBark.valence_label?.toFixed(2) ?? "--"}</div></div>
-              <div className={`rounded-xl border p-3 ${borderBase} ${bgCardInt}`}><div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Arousal</div><div className={`text-2xl font-black ${tColor}`}>{lastBark.arousal_label?.toFixed(2) ?? "--"}</div></div>
-              <div className={`rounded-xl border p-3 ${borderBase} ${bgCardInt}`}><div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Model Confidence</div><div className={`text-2xl font-black ${tColor}`}>{lastBark.confidence != null ? (lastBark.confidence * 100).toFixed(0) + "%" : "--"}</div></div>
-            </div>
-            <div className={`text-[10px] mt-3 uppercase tracking-wider ${tMutedAlt}`}>source: audio classifier · vocalisation is the only channel that carries valence directly</div>
-          </Card></div>
+              <div className={`text-[10px] mt-3 uppercase tracking-wider ${tMutedAlt}`}>source: audio classifier · vocalisation is the only channel that carries valence directly</div>
+            </Card>
+          </div>
         )}
 
         {!isEditing && affectData && cardPrefs.ai && (
@@ -594,7 +700,7 @@ export default function DashboardPage() {
 
               {aiError && (
                 <div className="text-sm text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-lg p-3">
-                  Couldn&apos;t reach the local model. {aiError}
+                            Couldn&apos;t reach the AI service. {aiError}
                 </div>
               )}
             </div>
@@ -818,6 +924,14 @@ export default function DashboardPage() {
                 </Card>
               </div>
             )}
+          </div>
+        )}
+
+        {!isEditing && (
+          <div className="mb-8">
+            <FamilyVideoWidget
+              onAnalysisComplete={setVisionAnalysis}
+            />
           </div>
         )}
 

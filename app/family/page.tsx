@@ -1,264 +1,505 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Card, PageShell, PrimaryButton, Pill } from "../../_components/ds";
+import { useRouter } from "next/navigation";
+import { PageShell, Card, Pill, PrimaryButton, SecondaryButton } from "../_components/ds";
+import FamilyVideoWidget from "./FamilyVideoWidget";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { computeTrends } from "@/lib/trends";
 
-export default function FamilyDashboardPage() {
-  const router = useRouter();
+const EMOTION_COLORS: Record<string, string> = {
+    HAPPY: "#eab308", RELAXED: "#22c55e", ANGRY: "#ef4444", SAD: "#3b82f6", UNCERTAIN: "#71717a",
+};
 
-  // State Management
-  const [dog, setDog] = useState<any>(null);
-  const [collar, setCollar] = useState<any>(null);
-  const [telemetry, setTelemetry] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+const SETTING_LABELS: Record<string, string> = {
+    heroStatus: "Main Pet Status & Mood",
+    aiAssistant: "AI Companion Chat",
+    vitalsOverview: "Vitals & Biometrics Overview",
+    barkDetection: "Live Bark Classifier",
+};
 
-  // AI Assistant State
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
+function quadrantEmotion(v: number, a: number) {
+    if (Math.hypot(v ?? 0, a ?? 0) < 0.2) return "UNCERTAIN";
+    if (v >= 0 && a >= 0) return "HAPPY";
+    if (v < 0 && a >= 0) return "ANGRY";
+    if (v < 0 && a < 0) return "SAD";
+    return "RELAXED";
+}
 
-  // Fetch initial dog/collar data
-  useEffect(() => {
-    async function loadData() {
-      try {
+function timeAgo(iso: string) {
+    if (!iso) return "";
+    const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+}
+
+export default function FamilyPage() {
+    const router = useRouter();
+
+    const [dog, setDog] = useState<any>(null);
+    const [motionData, setMotionData] = useState<any>(null);
+    const [affectData, setAffectData] = useState<any>(null);
+    const [affectHistory, setAffectHistory] = useState<any[]>([]);
+    const [lastBark, setLastBark] = useState<any>(null);
+    const [visionAnalysis, setVisionAnalysis] = useState<any>(null);
+    const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+    const [userQuery, setUserQuery] = useState("");
+    const [isSendingQuery, setIsSendingQuery] = useState(false);
+    const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string }>>([
+        { role: "assistant", text: "Hello! I'm monitoring your pet in real-time. Ask me anything about their mood or health!" }
+    ]);
+
+    const [isLightMode, setIsLightMode] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
+    const [cardPrefs, setCardPrefs] = useState({
+        heroStatus: true,
+        aiAssistant: true,
+        vitalsOverview: true,
+        barkDetection: true,
+    });
+
+    const [editForm, setEditForm] = useState({ name: "", breed: "", weight: "", age: "" });
+
+    const tColor = isLightMode ? "text-slate-900" : "text-white";
+    const tMuted = isLightMode ? "text-slate-600" : "text-white/60";
+    const borderBase = isLightMode ? "border-slate-200" : "border-white/10";
+    const bgCardInt = isLightMode ? "bg-slate-100" : "bg-white/5";
+    const bgInput = isLightMode ? "bg-white border-slate-300 text-slate-900 focus:border-violet-500" : "bg-black/50 border-white/20 text-white focus:border-violet-500";
+    const pageBg = isLightMode ? "bg-slate-50" : "bg-[#05060b]";
+
+    const getData = useCallback(async () => {
+        if (isEditingProfile) return;
+
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          router.push("/login");
-          return;
+        if (!session) return router.push("/login");
+
+        const { data: dogs } = await supabase.from("dogs").select("*")
+            .eq("user_id", session.user.id)
+            .order("is_active_wearer", { ascending: false })
+            .order("updated_at", { ascending: false })
+            .limit(1);
+
+        const d = dogs?.[0];
+        if (!d) return;
+
+        setDog(d);
+        setEditForm({
+            name: d.name ?? "",
+            breed: d.breed ?? "",
+            weight: String(d.weight ?? ""),
+            age: String(d.age ?? "")
+        });
+
+        const { data: motion } = await supabase.from("motion_data").select("*")
+            .eq("dog_id", d.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (motion) setMotionData(motion);
+
+        const { data: affect } = await supabase.from("affect_states").select("*")
+            .eq("dog_id", d.id).order("created_at", { ascending: false }).limit(1000);
+        if (affect && affect.length) {
+            setAffectHistory(affect.reverse());
+            setAffectData(affect[affect.length - 1]);
         }
 
-        const { data: dogData } = await supabase
-          .from("dogs")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .single();
+        const { data: bark } = await supabase.from("affect_labels").select("*")
+            .eq("dog_id", d.id).eq("source", "audio").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        setLastBark(bark ?? null);
+    }, [router, isEditingProfile]);
 
-        if (dogData) {
-          setDog(dogData);
-          const { data: collarData } = await supabase
-            .from("collars")
-            .select("*")
-            .eq("dog_id", dogData.id)
-            .single();
+    useAutoRefresh(getData, 3000, isEditingProfile);
 
-          if (collarData) setCollar(collarData);
+    useEffect(() => {
+        if (!dog?.id) return;
+        const ch = supabase.channel(`rt-family-${dog.id}`)
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "affect_states", filter: `dog_id=eq.${dog.id}` },
+                (p) => {
+                    setAffectData(p.new);
+                    setAffectHistory((prev) => { const u = [...prev, p.new]; return u.length > 1000 ? u.slice(1) : u; });
+                })
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "motion_data", filter: `dog_id=eq.${dog.id}` },
+                (p) => setMotionData(p.new))
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "affect_labels", filter: `dog_id=eq.${dog.id}` },
+                (p) => { if (p.new?.source === "audio") setLastBark(p.new); })
+            .subscribe();
+
+        return () => { supabase.removeChannel(ch); };
+    }, [dog?.id]);
+
+    const handleSaveProfile = async () => {
+        if (!dog?.id) return;
+        const payload = {
+            name: editForm.name,
+            breed: editForm.breed,
+            weight: parseFloat(editForm.weight) || 0,
+            age: parseFloat(editForm.age) || 0,
+            updated_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from("dogs").update(payload).eq("id", dog.id);
+        if (!error) {
+            setDog({ ...dog, ...payload });
+            setIsEditingProfile(false);
+        } else {
+            alert("Error updating profile: " + error.message);
         }
-      } catch (err) {
-        console.error("Error loading family dashboard:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, [router]);
-
-  // Subscribe to real-time telemetry
-  useEffect(() => {
-    if (!collar?.id) return;
-
-    const channel = supabase
-      .channel("family-telemetry-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "telemetry",
-          filter: `collar_id=eq.${collar.id}`,
-        },
-        (payload) => {
-          setTelemetry((prev) => [payload.new, ...prev.slice(0, 49)]);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
     };
-  }, [collar]);
 
-  // Latest telemetry data points
-  const latest = useMemo(() => telemetry[0] || {}, [telemetry]);
-  const hr = latest.heart_rate || 85;
-  const emotion = latest.emotion || "Calm";
-  const battery = collar?.battery_level ?? 92;
+    const handleSendChatMessage = async () => {
+        if (!userQuery.trim() || isSendingQuery) return;
 
-  // AI Assistant Handler
-  const handleAskAI = async () => {
-    if (!aiQuestion.trim()) return;
-    setAiLoading(true);
-    setAiAnswer(null);
+        const q = userQuery.trim();
+        setUserQuery("");
+        setIsSendingQuery(true);
 
-    try {
-      // Direct call or proxy to your existing AI route
-      const response = await fetch("/api/ai-assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: aiQuestion,
-          dogContext: {
-            name: dog?.name,
-            breed: dog?.breed,
-            heartRate: hr,
-            emotion: emotion,
-          },
-        }),
-      });
+        const updated = [...chatMessages, { role: "user" as const, text: q }];
+        setChatMessages(updated);
 
-      if (response.ok) {
-        const data = await response.json();
-        setAiAnswer(data.answer || "Your dog appears to be doing great right now!");
-      } else {
-        setAiAnswer(`Based on current vitals (${hr} BPM, State: ${emotion}), ${dog?.name || "your dog"} is displaying stable behavior.`);
-      }
-    } catch {
-      setAiAnswer(`Based on current vitals (${hr} BPM, State: ${emotion}), ${dog?.name || "your dog"} is displaying stable behavior.`);
-    } finally {
-      setAiLoading(false);
-    }
-  };
+        try {
+            const trends = computeTrends(affectHistory);
+            const res = await fetch("/api/assistant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    dog,
+                    liveMetrics: affectData,
+                    motion: motionData,
+                    barkAnalysis: lastBark,
+                    finalEmotion:
+                        affectData?.predicted_emotion ||
+                        quadrantEmotion(
+                            affectData?.valence ?? 0,
+                            affectData?.arousal ?? 0
+                        ),
+                    finalRussell: {
+                        valence: affectData?.valence ?? null,
+                        arousal: affectData?.arousal ?? null,
+                    },
+                    valenceReliable: affectData?.valence_reliable === true,
+                    activeContext: null,
+                    trends,
+                    visionAnalysis,
+                    messages: updated.map((msg) => ({
+                        role: msg.role,
+                        content: msg.text,
+                    })),
+                    isChat: true
+                })
+            });
 
-  if (loading) {
+            const contentType = res.headers.get("content-type");
+
+            if (
+                !contentType ||
+                !contentType.includes("application/json")
+            ) {
+                const responseText = await res.text();
+
+                console.error(
+                    "Assistant endpoint returned non-JSON:",
+                    responseText
+                );
+
+                throw new Error(
+                    "The assistant server returned an invalid response."
+                );
+            }
+
+            const data = await res.json();
+
+            if (!res.ok || !data?.text?.trim()) {
+                throw new Error(
+                    data?.detail ||
+                    data?.error ||
+                    "Could not reach the AI service."
+                );
+            }
+
+            setChatMessages([
+                ...updated,
+                {
+                    role: "assistant",
+                    text: data.text.trim(),
+                },
+            ]);
+        } catch (err) {
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : "Unknown assistant error.";
+
+            console.error("Family AI assistant error:", err);
+
+            setChatMessages([
+                ...updated,
+                {
+                    role: "assistant",
+                    text:
+                        "I couldn't reach the AI service right now. " +
+                        `Please try again in a moment. (${message})`,
+                },
+            ]);
+        } finally {
+            setIsSendingQuery(false);
+        }
+    };
+
+    const currentEmotion = affectData?.predicted_emotion ||
+        (affectData ? quadrantEmotion(affectData.valence ?? 0, affectData.arousal ?? 0) : "UNCERTAIN");
+
+    const isBarkingNow = lastBark && (Date.now() - new Date(lastBark.created_at).getTime()) < 15000;
+
     return (
-      <div className="min-h-screen bg-[#05060b] text-white flex items-center justify-center">
-        <div className="animate-pulse text-sm font-black uppercase tracking-widest text-violet-400">
-          Loading Family Dashboard...
-        </div>
-      </div>
-    );
-  }
+        <PageShell subtitle={`Family Mode • ${dog?.name || "Pet Feed"}`}>
+            <div className={`min-h-screen ${pageBg} px-4 py-6 sm:px-6 lg:px-8 transition-colors duration-300`}>
 
-  return (
-    <div className="min-h-screen bg-[#05060b] relative overflow-hidden text-white font-sans selection:bg-violet-500/30">
-      {/* Background Glows */}
-      <div className="absolute inset-0 z-0 opacity-40 pointer-events-none">
-        <div className="absolute top-[-5%] left-[-5%] w-[120%] md:w-[60%] h-[50%] bg-violet-900/20 blur-[100px] rounded-full" />
-        <div className="absolute bottom-[-5%] right-[-5%] w-[120%] md:w-[60%] h-[50%] bg-cyan-900/20 blur-[100px] rounded-full" />
-      </div>
+                {/* Navigation & Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                        <h1 className={`text-2xl font-black italic ${tColor}`}>Family Overview</h1>
+                        <Pill tone="violet" label="Family Mode" />
+                    </div>
 
-      <PageShell subtitle={`Family View • ${dog?.name || "Smart Collar"}`}>
-        <div className="relative z-10 mx-auto max-w-5xl px-6 py-8 space-y-8">
-          
-          {/* Header Row */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/5 p-6 rounded-[28px] border border-white/10 backdrop-blur-md">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-3xl font-black italic">{dog?.name || "Max"}</h1>
-                <Pill tone="emerald" label="Online" />
-                <Pill tone="violet" label="Family Mode" />
-              </div>
-              <p className="text-xs text-white/40">
-                {dog?.breed || "Golden Retriever"} • {dog?.age ? `${dog.age} Yrs` : "3 Yrs"} • {dog?.weight ? `${dog.weight} kg` : "25 kg"}
-              </p>
-            </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => router.push("/choosemode")}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 ${borderBase} ${bgCardInt} ${tColor} hover:opacity-80`}
+                        >
+                            <span>🔄</span> Switch Mode
+                        </button>
 
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.push("/dashboard")}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 transition-all text-white/70 hover:text-white"
-              >
-                Switch to Pro Mode ➔
-              </button>
-            </div>
-          </div>
+                        <button
+                            onClick={() => router.push("/dashboard")}
+                            className="px-3 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition hover:bg-cyan-500/30"
+                        >
+                            ⚡ Pro Mode
+                        </button>
 
-          {/* Main Status Grid */}
-          <div className="grid md:grid-cols-3 gap-6">
-            
-            {/* Current Emotion Card */}
-            <Card accent="violet" className="md:col-span-2 p-8 border-white/10 bg-gradient-to-br from-violet-500/10 via-white/5 to-cyan-500/10 backdrop-blur-2xl">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-violet-400">
-                    Current Emotion & State
-                  </span>
-                  <h2 className="text-4xl font-[1000] italic mt-1 text-white">{emotion}</h2>
+                        <button
+                            onClick={() => setIsLightMode(!isLightMode)}
+                            className={`p-2 rounded-xl border text-xs transition ${borderBase} ${bgCardInt} ${tColor}`}
+                        >
+                            {isLightMode ? "🌙 Dark" : "☀️ Light"}
+                        </button>
+
+                        <button
+                            onClick={() => setShowSettings(!showSettings)}
+                            className={`p-2 rounded-xl border text-xs transition ${borderBase} ${bgCardInt} ${tColor}`}
+                        >
+                            ⚙️
+                        </button>
+                    </div>
                 </div>
-                <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black rounded-full animate-pulse">
-                  LIVE
-                </div>
-              </div>
 
-              <p className="text-sm text-white/60 mb-6 leading-relaxed">
-                {emotion === "Happy" && `${dog?.name || "Your dog"} is showing energetic and positive behavioral signals.`}
-                {emotion === "Calm" && `${dog?.name || "Your dog"} is relaxed with stable heart rates.`}
-                {emotion === "Anxious" && `${dog?.name || "Your dog"} exhibits elevated movement and heart rates.`}
-                {emotion !== "Happy" && emotion !== "Calm" && emotion !== "Anxious" && `${dog?.name || "Your dog"} is active and monitored.`}
-              </p>
+                {/* Customization Settings Drawer */}
+                {showSettings && (
+                    <div className="mb-6">
+                        <Card accent="violet">
+                            <h4 className={`text-sm font-bold mb-3 ${tColor}`}>Customize Family Widgets</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                                {Object.keys(cardPrefs).map(key => (
+                                    <label key={key} className="flex items-center gap-2 cursor-pointer text-xs">
+                                        <input
+                                            type="checkbox"
+                                            checked={(cardPrefs as any)[key]}
+                                            onChange={e => setCardPrefs({ ...cardPrefs, [key]: e.target.checked })}
+                                            className="rounded accent-violet-500"
+                                        />
+                                        <span className={`font-medium ${tColor}`}>{SETTING_LABELS[key] || key}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </Card>
+                    </div>
+                )}
 
-              <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/10">
-                <div className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-400 to-cyan-400 rounded-full w-[88%] transition-all duration-1000" />
-              </div>
-            </Card>
+                {/* --- MODULE 1: Main Pet Hero Status --- */}
+                {cardPrefs.heroStatus && (
+                    <div className="mb-8">
+                        <Card accent="emerald">
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-2">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center text-4xl shadow-inner">
+                                        🐶
+                                    </div>
+                                    <div>
+                                        {!isEditingProfile ? (
+                                            <div>
+                                                <div className="flex items-center gap-3">
+                                                    <h2 className={`text-3xl font-black ${tColor}`}>{dog?.name || "Your Dog"}</h2>
+                                                    <button
+                                                        onClick={() => setIsEditingProfile(true)}
+                                                        className="text-xs text-violet-400 underline hover:text-violet-300"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                </div>
+                                                <p className={`text-sm ${tMuted}`}>{dog?.breed || "Unknown Breed"} • {dog?.age ? `${dog.age} Years Old` : ""}</p>
+                                                <span className="text-xs text-emerald-400 font-bold uppercase tracking-widest mt-1 inline-block">● Collar Connected ({dog?.collar_id || "No collar ID"})</span>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        className={`px-2 py-1 text-xs rounded border ${bgInput}`}
+                                                        value={editForm.name}
+                                                        placeholder="Name"
+                                                        onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                                                    />
+                                                    <input
+                                                        className={`px-2 py-1 text-xs rounded border ${bgInput}`}
+                                                        value={editForm.breed}
+                                                        placeholder="Breed"
+                                                        onChange={e => setEditForm({ ...editForm, breed: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        className={`px-2 py-1 text-xs rounded border ${bgInput}`}
+                                                        value={editForm.age}
+                                                        placeholder="Age"
+                                                        onChange={e => setEditForm({ ...editForm, age: e.target.value })}
+                                                    />
+                                                    <button onClick={handleSaveProfile} className="px-3 py-1 bg-emerald-600 text-white rounded text-xs font-bold">Save</button>
+                                                    <button onClick={() => setIsEditingProfile(false)} className="px-2 py-1 text-xs text-white/60">Cancel</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
 
-            {/* Quick Metrics */}
-            <div className="space-y-6">
-              <Card accent="cyan" className="p-6 border-white/10 bg-white/5 backdrop-blur-md">
-                <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2">
-                  Heart Rate
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-white">{hr}</span>
-                  <span className="text-xs text-white/40 font-bold">BPM</span>
-                </div>
-                <p className="text-[11px] text-emerald-400 mt-2 font-medium">✓ Normal Range</p>
-              </Card>
+                                <div className="text-center md:text-right">
+                                    <div className={`text-xs uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Current Emotion</div>
+                                    <div className="text-3xl font-black tracking-tight" style={{ color: EMOTION_COLORS[currentEmotion] || "#22c55e" }}>
+                                        {currentEmotion}
+                                    </div>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
 
-              <Card accent="emerald" className="p-6 border-white/10 bg-white/5 backdrop-blur-md">
-                <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2">
-                  Collar Battery
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-white">{battery}%</span>
-                </div>
-                <p className="text-[11px] text-white/40 mt-2 font-medium">Estimated 3 days remaining</p>
-              </Card>
-            </div>
-          </div>
+                {/* --- MODULE 2: AI Assistant Chat --- */}
+                {cardPrefs.aiAssistant && (
+                    <div className="mb-8">
+                        <Card accent="violet">
+                            <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">🤖</span>
+                                    <h3 className={`text-lg font-bold ${tColor}`}>AI Assistant Companion</h3>
+                                </div>
+                                <Pill tone="emerald" label="Live AI" />
+                            </div>
 
-          {/* AI Assistant Section */}
-          <Card accent="violet" className="p-8 border-white/10 bg-white/5 backdrop-blur-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-cyan-500 flex items-center justify-center font-black text-sm shadow-lg shadow-violet-500/20">
-                AI
-              </div>
-              <div>
-                <h3 className="text-xl font-black italic">Smart AI Assistant</h3>
-                <p className="text-xs text-white/40">Ask anything about {dog?.name || "your pet"}'s behavior or wellbeing</p>
-              </div>
-            </div>
+                            <div className="space-y-3 max-h-60 overflow-y-auto mb-4 p-2">
+                                {chatMessages.map((msg, idx) => (
+                                    <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                                        <div className={`max-w-[80%] p-3 rounded-2xl text-xs sm:text-sm font-medium ${msg.role === "user"
+                                                ? "bg-violet-600 text-white rounded-br-none"
+                                                : `${bgCardInt} ${tColor} border ${borderBase} rounded-bl-none`
+                                            }`}>
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
 
-            <div className="space-y-4">
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  placeholder={`Ask AI about ${dog?.name || "your dog"}... (e.g. "Is 85 BPM normal right now?")`}
-                  value={aiQuestion}
-                  onChange={(e) => setAiQuestion(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleAskAI()}
-                  className="flex-1 bg-white/[0.03] border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500/50 transition-all"
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Ask anything about your dog's state, mood or trends..."
+                                    className={`flex-1 p-2.5 rounded-xl border text-sm ${bgInput}`}
+                                    value={userQuery}
+                                    onChange={e => setUserQuery(e.target.value)}
+                                    onKeyDown={e => e.key === "Enter" && handleSendChatMessage()}
+                                />
+                                <PrimaryButton onClick={handleSendChatMessage} disabled={isSendingQuery || !userQuery.trim()}>
+                                    {isSendingQuery ? "Sending..." : "Send"}
+                                </PrimaryButton>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+
+                {/* Vision ML Video Analysis Widget */}
+                <FamilyVideoWidget
+                    onAnalysisComplete={setVisionAnalysis}
                 />
-                <PrimaryButton onClick={handleAskAI} className="whitespace-nowrap px-8">
-                  {aiLoading ? "Analyzing..." : "Ask AI"}
-                </PrimaryButton>
-              </div>
 
-              {aiAnswer && (
-                <div className="p-6 rounded-2xl bg-violet-500/10 border border-violet-500/20 text-sm text-white/80 leading-relaxed mt-4 animate-fadeIn">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-violet-400 mb-2">
-                    AI Insight Response
-                  </div>
-                  {aiAnswer}
-                </div>
-              )}
+                {/* --- MODULE 3: Vitals Overview --- */}
+                {cardPrefs.vitalsOverview && (
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+                        <Card>
+                            <div className={`text-[10px] uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Heart Rate</div>
+                            <div className={`text-2xl font-black ${tColor}`}>{affectData?.raw_hr != null ? `${affectData.raw_hr.toFixed(1)} BPM` : "--"}</div>
+                        </Card>
+
+                        <Card>
+                            <div className={`text-[10px] uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Oxygen (SpO2)</div>
+                            <div className={`text-2xl font-black ${tColor}`}>{affectData?.spo2 != null ? `${affectData.spo2.toFixed(0)}%` : "--"}</div>
+                        </Card>
+
+                        <Card>
+                            <div className={`text-[10px] uppercase tracking-widest font-bold mb-1 ${tMuted}`}>HRV</div>
+                            <div className={`text-2xl font-black ${tColor}`}>{affectData?.raw_rmssd != null ? `${affectData.raw_rmssd.toFixed(1)} ms` : "--"}</div>
+                        </Card>
+
+                        <Card>
+                            <div className={`text-[10px] uppercase tracking-widest font-bold mb-1 ${tMuted}`}>Posture</div>
+                            <div className={`text-2xl font-black capitalize ${tColor}`}>{affectData?.posture ?? "--"}</div>
+                        </Card>
+                    </div>
+                )}
+
+                {/* --- MODULE 4: Live Bark Detection --- */}
+                {cardPrefs.barkDetection && (
+                    <div>
+                        <Card accent="violet">
+                            <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">🔊</span>
+                                    <h3 className={`text-lg font-bold ${tColor}`}>Bark Detection</h3>
+                                </div>
+                                <Pill
+                                    tone={isBarkingNow ? "amber" : "zinc"}
+                                    label={isBarkingNow ? "Barking Detected" : "Quiet"}
+                                />
+                            </div>
+
+                            {lastBark ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className={`p-4 rounded-xl border ${borderBase} ${bgCardInt}`}>
+                                        <div className={`text-xs ${tMuted}`}>Bark Status</div>
+                                        <div className={`text-lg font-bold mt-1 ${isBarkingNow ? "text-amber-400" : tColor}`}>
+                                            {isBarkingNow ? "🔊 Active Barking" : "No Active Barking"}
+                                        </div>
+                                        {!isBarkingNow && (
+                                            <div className={`text-xs mt-1 ${tMuted}`}>Last detected: {timeAgo(lastBark.created_at)}</div>
+                                        )}
+                                    </div>
+
+                                    <div className={`p-4 rounded-xl border ${borderBase} ${bgCardInt}`}>
+                                        <div className={`text-xs ${tMuted}`}>Bark Type</div>
+                                        <div className={`text-lg font-bold capitalize mt-1 ${tColor}`}>
+                                            {lastBark?.valence_label != null && lastBark?.arousal_label != null
+                                                ? quadrantEmotion(lastBark.valence_label, lastBark.arousal_label)
+                                                : "--"}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className={`p-4 rounded-xl text-xs text-center ${bgCardInt} ${tMuted}`}>
+                                    No bark events recorded yet.
+                                </div>
+                            )}
+                        </Card>
+                    </div>
+                )}
+
             </div>
-          </Card>
-
-        </div>
-      </PageShell>
-    </div>
-  );
+        </PageShell>
+    );
 }

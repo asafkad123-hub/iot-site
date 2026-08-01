@@ -1,4 +1,4 @@
-﻿// lib/trends.ts
+// lib/trends.ts
 // Turns a time-ordered affect history into the "shape" a human reads off the
 // Russell scatter plot, expressed as numbers an LLM can reason about.
 // Pure functions, no dependencies. Safe on empty/short histories.

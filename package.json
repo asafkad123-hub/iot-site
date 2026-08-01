@@ -3,19 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.94.0",
+    "@supabase/supabase-js": "^2.110.8",
+    "autoprefixer": "^10.4.27",
     "next": "16.1.6",
-    "openai": "^6.32.0",
-    "plotly.js": "^3.6.0",
+    "openai": "^6.49.0",
+    "plotly.js": "^3.5.1",
+    "postcss": "^8.5.8",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-plotly.js": "^4.0.0"
+    "react-plotly.js": "^2.6.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -24,7 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5"
   }
 }
